@@ -1,10 +1,10 @@
-[build]
-builder = "DOCKERFILE"
-dockerfilePath = "services/app/Dockerfile"
-
 [[services]]
 name = "app"
 source = "services/app"
+
+[services.build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [services.deploy]
 startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
