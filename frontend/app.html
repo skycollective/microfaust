@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MicroFaust — App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Cinzel:wght@400;600&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
+<!-- Supabase JS -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --ink: #0a0804; --vellum: #f5f0e8; --amber: #c8902a;
+  --ember: #e85d1a; --ash: #8a7f6e; --smoke: #2a2520;
+  --smoke2: #1a1612; --gold: #d4a843; --error: #c0392b; --ok: #27ae60;
+}
+html, body { height: 100%; }
+body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', sans-serif; font-weight: 300; overflow-x: hidden; }
+
+/* ── Auth screen ────────────────────────────────────────── */
+#auth-screen {
+  min-height: 100vh; display: flex; flex-direction: column;
+  justify-content: center; align-items: center; text-align: center;
+  padding: 48px 24px;
+  background: radial-gradient(ellipse 60% 70% at 50% 50%, rgba(200,144,42,.07) 0%, transparent 70%);
+}
+.auth-logo { display: flex; align-items: baseline; margin-bottom: 12px; }
+.auth-logo .nm { font-family: 'Cinzel', serif; font-size: 24px; font-weight: 600; letter-spacing: .06em; color: var(--vellum); text-transform: uppercase; }
+.auth-logo .nf { font-family: 'Cormorant Garamond', serif; font-size: 30px; font-style: italic; color: var(--gold); margin-left: 2px; }
+.auth-tagline { font-family: 'Cormorant Garamond', serif; font-style: italic; color: var(--ash); font-size: 16px; margin-bottom: 48px; }
+.auth-card { background: var(--smoke2); border: 0.5px solid rgba(200,144,42,.2); width: 100%; max-width: 400px; padding: 40px; }
+.auth-title { font-family: 'Cinzel', serif; font-size: 16px; letter-spacing: .08em; color: var(--gold); margin-bottom: 32px; }
+.btn-google {
+  width: 100%; padding: 14px 20px; background: var(--vellum); color: var(--ink);
+  border: none; cursor: pointer; font-family: 'DM Sans', sans-serif;
+  font-size: 14px; font-weight: 400; display: flex; align-items: center;
+  justify-content: center; gap: 10px; transition: background .2s; margin-bottom: 20px;
+}
+.btn-google:hover { background: #e8e3db; }
+.btn-google svg { flex-shrink: 0; }
+.auth-divider { position: relative; margin: 0 0 20px; text-align: center; }
+.auth-divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 0.5px; background: rgba(245,240,232,.1); }
+.auth-divider span { position: relative; background: var(--smoke2); padding: 0 12px; font-size: 11px; letter-spacing: .15em; text-transform: uppercase; color: var(--ash); }
+.auth-field { margin-bottom: 16px; }
+.auth-field label { display: block; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash); margin-bottom: 6px; }
+.auth-field input {
+  width: 100%; padding: 12px 14px; background: rgba(255,255,255,.04);
+  border: 0.5px solid rgba(245,240,232,.15); color: var(--vellum);
+  font-family: 'DM Sans', sans-serif; font-size: 14px;
+  outline: none; transition: border-color .2s;
+}
+.auth-field input:focus { border-color: var(--amber); }
+.btn-submit {
+  width: 100%; padding: 14px; background: var(--amber); color: var(--ink);
+  border: none; cursor: pointer; font-family: 'DM Sans', sans-serif;
+  font-size: 13px; letter-spacing: .1em; text-transform: uppercase;
+  transition: background .2s; margin-top: 4px;
+}
+.btn-submit:hover { background: var(--gold); }
+.btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+.auth-switch { margin-top: 20px; font-size: 13px; color: var(--ash); }
+.auth-switch a { color: var(--amber); cursor: pointer; text-decoration: none; }
+.auth-switch a:hover { color: var(--gold); }
+.auth-error { background: rgba(192,57,43,.15); border: 0.5px solid rgba(192,57,43,.4); color: #e74c3c; font-size: 13px; padding: 10px 14px; margin-bottom: 16px; display: none; }
+.auth-error.visible { display: block; }
+
+/* ── App shell ──────────────────────────────────────────── */
+#app-screen { display: none; min-height: 100vh; }
+.app-nav {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10,8,4,.97); border-bottom: 0.5px solid rgba(245,240,232,.08);
+  padding: 16px 40px; display: flex; justify-content: space-between; align-items: center;
+}
+.app-logo { display: flex; align-items: baseline; }
+.app-logo .nm { font-family: 'Cinzel', serif; font-size: 14px; font-weight: 600; letter-spacing: .06em; color: var(--vellum); text-transform: uppercase; }
+.app-logo .nf { font-family: 'Cormorant Garamond', serif; font-size: 18px; font-style: italic; color: var(--gold); margin-left: 2px; }
+.nav-user { display: flex; align-items: center; gap: 16px; }
+.nav-email { font-size: 12px; color: var(--ash); letter-spacing: .03em; }
+.btn-logout { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ash); background: none; border: 0.5px solid rgba(138,127,110,.3); padding: 6px 16px; cursor: pointer; transition: all .2s; font-family: 'DM Sans', sans-serif; }
+.btn-logout:hover { border-color: var(--amber); color: var(--vellum); }
+
+.app-main { max-width: 1100px; margin: 0 auto; padding: 48px 40px; }
+.app-greeting { margin-bottom: 48px; }
+.app-greeting h1 { font-family: 'Cormorant Garamond', serif; font-size: clamp(28px, 4vw, 42px); font-weight: 400; line-height: 1.2; }
+.app-greeting h1 em { color: var(--gold); font-style: italic; }
+.app-greeting p { color: var(--ash); font-size: 14px; margin-top: 8px; }
+
+/* Setup steps */
+.setup-card { background: var(--smoke2); border: 0.5px solid rgba(200,144,42,.2); padding: 36px; margin-bottom: 24px; }
+.setup-card-header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+.setup-step-num { font-family: 'Cinzel', serif; font-size: 32px; color: rgba(200,144,42,.3); line-height: 1; min-width: 40px; }
+.setup-step-num.done { color: var(--ok); font-size: 24px; }
+.setup-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: .06em; color: var(--gold); margin-bottom: 4px; }
+.setup-desc { font-size: 13px; color: var(--ash); line-height: 1.6; }
+.setup-field { margin-bottom: 16px; }
+.setup-field label { display: block; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash); margin-bottom: 6px; }
+.setup-field input {
+  width: 100%; max-width: 480px; padding: 10px 14px;
+  background: rgba(255,255,255,.04); border: 0.5px solid rgba(245,240,232,.12);
+  color: var(--vellum); font-family: 'DM Sans', sans-serif; font-size: 14px;
+  outline: none; transition: border-color .2s;
+}
+.setup-field input:focus { border-color: var(--amber); }
+.setup-field small { display: block; margin-top: 6px; font-size: 12px; color: var(--ash); }
+.setup-field small a { color: var(--amber); text-decoration: none; }
+.btn-save { padding: 10px 28px; background: var(--amber); color: var(--ink); border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; transition: background .2s; }
+.btn-save:hover { background: var(--gold); }
+.btn-save:disabled { opacity: .5; cursor: not-allowed; }
+.save-msg { margin-left: 12px; font-size: 13px; display: none; }
+.save-msg.ok { color: var(--ok); display: inline; }
+.save-msg.err { color: var(--error); display: inline; }
+
+/* Dashboard grid */
+.dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2px; background: rgba(245,240,232,.06); margin-top: 40px; }
+.dash-card { background: var(--ink); padding: 32px; transition: background .3s; }
+.dash-card:hover { background: var(--smoke); }
+.dash-icon { font-size: 28px; margin-bottom: 16px; }
+.dash-title { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: .1em; color: var(--gold); margin-bottom: 8px; }
+.dash-value { font-family: 'Cormorant Garamond', serif; font-size: 36px; color: var(--vellum); line-height: 1; margin-bottom: 4px; }
+.dash-sub { font-size: 12px; color: var(--ash); }
+.dash-status { display: inline-block; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; padding: 3px 10px; }
+.dash-status.ok { background: rgba(39,174,96,.15); color: var(--ok); }
+.dash-status.warn { background: rgba(200,144,42,.15); color: var(--amber); }
+
+/* Inline notification */
+.banner { padding: 12px 16px; font-size: 13px; display: none; margin-bottom: 24px; border-left: 3px solid; }
+.banner.info { display: block; background: rgba(200,144,42,.08); border-color: var(--amber); color: var(--vellum); }
+.banner.error { display: block; background: rgba(192,57,43,.1); border-color: var(--error); color: #e74c3c; }
+
+/* Loading overlay */
+#loading { position: fixed; inset: 0; background: var(--ink); display: flex; align-items: center; justify-content: center; z-index: 999; }
+.loading-logo { display: flex; align-items: baseline; animation: pulse 1.5s infinite; }
+.loading-logo .nm { font-family: 'Cinzel', serif; font-size: 32px; font-weight: 600; letter-spacing: .06em; color: var(--vellum); text-transform: uppercase; }
+.loading-logo .nf { font-family: 'Cormorant Garamond', serif; font-size: 40px; font-style: italic; color: var(--gold); margin-left: 3px; }
+@keyframes pulse { 0%,100%{opacity:.4}50%{opacity:1} }
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none} }
+.fade-up { animation: fadeUp .5s forwards; }
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="loading-logo">
+    <span class="nm">Micro</span><span class="nf">Faust</span>
+  </div>
+</div>
+
+<!-- ── Auth screen ──────────────────────────────────────── -->
+<div id="auth-screen">
+  <div class="auth-logo"><span class="nm">Micro</span><span class="nf">Faust</span></div>
+  <p class="auth-tagline">Votre âme est votre intelligence.</p>
+
+  <div class="auth-card fade-up">
+    <div class="auth-title" id="auth-mode-title">Connexion</div>
+    <div class="auth-error" id="auth-error"></div>
+
+    <!-- Google OAuth -->
+    <button class="btn-google" onclick="signInWithGoogle()">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z"/><path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.548 0 9s.348 2.825.957 4.039l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+      Continuer avec Google
+    </button>
+
+    <div class="auth-divider"><span>ou par email</span></div>
+
+    <form id="auth-form" onsubmit="submitAuth(event)">
+      <div class="auth-field">
+        <label>Email</label>
+        <input type="email" id="auth-email" required placeholder="vous@domaine.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label>Mot de passe</label>
+        <input type="password" id="auth-password" required placeholder="••••••••" autocomplete="current-password" minlength="8">
+      </div>
+      <div class="auth-field" id="confirm-field" style="display:none">
+        <label>Confirmer le mot de passe</label>
+        <input type="password" id="auth-confirm" placeholder="••••••••" minlength="8">
+      </div>
+      <button type="submit" class="btn-submit" id="auth-submit">Se connecter</button>
+    </form>
+
+    <div class="auth-switch" id="auth-switch">
+      Pas de compte ? <a onclick="toggleMode()">Créer un compte</a>
+    </div>
+    <div class="auth-switch" id="forgot-link" style="margin-top:8px">
+      <a onclick="forgotPassword()">Mot de passe oublié ?</a>
+    </div>
+  </div>
+</div>
+
+<!-- ── App screen ───────────────────────────────────────── -->
+<div id="app-screen">
+  <nav class="app-nav">
+    <div class="app-logo"><span class="nm">Micro</span><span class="nf">Faust</span></div>
+    <div class="nav-user">
+      <span class="nav-email" id="user-email-display"></span>
+      <button class="btn-logout" onclick="signOut()">Déconnexion</button>
+    </div>
+  </nav>
+
+  <main class="app-main">
+    <div class="app-greeting">
+      <h1 id="greeting-title">Bienvenue, <em id="greeting-name">Alchimiste</em></h1>
+      <p id="greeting-sub">Configurez votre assistant pour commencer.</p>
+    </div>
+
+    <!-- Banner for inline messages -->
+    <div class="banner" id="banner"></div>
+
+    <!-- ── Setup step 1: Telegram bot ──────────────────── -->
+    <div class="setup-card" id="card-bot">
+      <div class="setup-card-header">
+        <div class="setup-step-num" id="step1-num">01</div>
+        <div>
+          <div class="setup-title">Connecter Telegram</div>
+          <div class="setup-desc">Créez un bot avec <a href="https://t.me/BotFather" target="_blank" style="color:var(--amber)">@BotFather</a> et collez le token ci-dessous.</div>
+        </div>
+      </div>
+      <div class="setup-field">
+        <label>Bot Token</label>
+        <input type="password" id="bot-token-input" placeholder="123456789:ABCDefgh..." autocomplete="off">
+        <small>Obtenez-le via /newbot sur <a href="https://t.me/BotFather" target="_blank">@BotFather</a>. Il ne sera jamais affiché après enregistrement.</small>
+      </div>
+      <button class="btn-save" id="btn-save-bot" onclick="saveBotToken()">Enregistrer</button>
+      <span class="save-msg" id="bot-msg"></span>
+    </div>
+
+    <!-- ── Setup step 2: Values ────────────────────────── -->
+    <div class="setup-card" id="card-values">
+      <div class="setup-card-header">
+        <div class="setup-step-num" id="step2-num">02</div>
+        <div>
+          <div class="setup-title">Vos valeurs</div>
+          <div class="setup-desc">Définissez ce qui vous guide. Ces valeurs ancreront chaque réponse de MicroFaust.</div>
+        </div>
+      </div>
+      <div id="values-list" style="margin-bottom:16px"></div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="setup-field" style="margin-bottom:0;flex:1;min-width:200px">
+          <label>Nouvelle valeur</label>
+          <input type="text" id="value-name-input" placeholder="ex: Impact authentique" maxlength="60">
+        </div>
+        <div class="setup-field" style="margin-bottom:0;flex:2;min-width:200px">
+          <label>Description (optionnel)</label>
+          <input type="text" id="value-desc-input" placeholder="Ce que ça signifie pour vous" maxlength="160">
+        </div>
+        <button class="btn-save" onclick="addValue()" style="margin-bottom:0">Ajouter</button>
+      </div>
+      <span class="save-msg" id="values-msg"></span>
+    </div>
+
+    <!-- ── Dashboard (shown when setup is done) ─────────── -->
+    <div id="dashboard-section" style="display:none">
+      <h2 style="font-family:'Cinzel',serif;font-size:14px;letter-spacing:.1em;color:var(--ash);text-transform:uppercase;margin-bottom:24px">Tableau de bord</h2>
+      <div class="dashboard">
+        <div class="dash-card">
+          <div class="dash-icon">🧠</div>
+          <div class="dash-title">Souvenirs</div>
+          <div class="dash-value" id="stat-thoughts">—</div>
+          <div class="dash-sub">dans votre mémoire</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-icon">⚖️</div>
+          <div class="dash-title">Valeurs</div>
+          <div class="dash-value" id="stat-values">—</div>
+          <div class="dash-sub">valeurs définies</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-icon">🏃</div>
+          <div class="dash-title">Habitudes</div>
+          <div class="dash-value" id="stat-habits">—</div>
+          <div class="dash-sub">habitudes actives</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-icon">💬</div>
+          <div class="dash-title">Telegram</div>
+          <div class="dash-sub" style="margin-top:8px"><span class="dash-status" id="telegram-status">—</span></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ── Config ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL  = 'REPLACE_WITH_SUPABASE_URL'
+const SUPABASE_ANON = 'REPLACE_WITH_SUPABASE_ANON_KEY'
+const API_BASE      = 'REPLACE_WITH_RAILWAY_API_URL'   // e.g. https://microfaust.railway.app
+
+const { createClient } = supabase
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON)
+
+let currentSession = null
+let isSignupMode   = false
+
+// ── Bootstrap ──────────────────────────────────────────────────────────────
+async function init() {
+  // Listen for auth state changes (handles OAuth redirect callbacks too)
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      currentSession = session
+      await onSignedIn(session)
+    } else if (event === 'SIGNED_OUT') {
+      currentSession = null
+      showAuth()
+    }
+  })
+
+  // Check existing session
+  const { data: { session } } = await sb.auth.getSession()
+  if (session) {
+    currentSession = session
+    await onSignedIn(session)
+  } else {
+    showAuth()
+  }
+
+  document.getElementById('loading').style.display = 'none'
+}
+
+// ── Called after any successful login ─────────────────────────────────────
+async function onSignedIn(session) {
+  document.getElementById('loading').style.display = 'none'
+  document.getElementById('auth-screen').style.display = 'none'
+  document.getElementById('app-screen').style.display = 'block'
+
+  const user = session.user
+  const email = user.email || ''
+  const name  = user.user_metadata?.full_name || email.split('@')[0] || 'Alchimiste'
+
+  document.getElementById('user-email-display').textContent = email
+  document.getElementById('greeting-name').textContent = name
+  document.getElementById('greeting-sub').textContent = `Bienvenue dans votre antre, ${name}.`
+
+  // Sync user with backend (creates tenant row if first login)
+  await syncWithBackend(session)
+
+  // Load user data
+  await loadDashboard(session)
+}
+
+// ── Sync tenant with Railway API ───────────────────────────────────────────
+async function syncWithBackend(session) {
+  try {
+    const res = await fetch(`${API_BASE}/auth/sync`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    })
+    if (!res.ok) {
+      console.warn('Backend sync returned', res.status)
+    }
+  } catch (e) {
+    // Non-fatal — backend may not be up yet during dev
+    console.warn('Backend sync failed:', e.message)
+  }
+}
+
+// ── Load dashboard stats ───────────────────────────────────────────────────
+async function loadDashboard(session) {
+  try {
+    const headers = { 'Authorization': `Bearer ${session.access_token}` }
+
+    // Fetch values count
+    const vRes = await fetch(`${API_BASE}/values`, { headers })
+    if (vRes.ok) {
+      const values = await vRes.json()
+      document.getElementById('stat-values').textContent = values.length
+      if (values.length > 0) {
+        document.getElementById('step2-num').classList.add('done')
+        document.getElementById('step2-num').textContent = '✓'
+        renderValuesList(values)
+      }
+    }
+
+    // Fetch health to determine Telegram status
+    const hRes = await fetch(`${API_BASE}/health`)
+    if (hRes.ok) {
+      const health = await hRes.json()
+      const telEl = document.getElementById('telegram-status')
+      if (health.queue_ok) {
+        telEl.textContent = 'Connecté'
+        telEl.className = 'dash-status ok'
+      } else {
+        telEl.textContent = 'À configurer'
+        telEl.className = 'dash-status warn'
+      }
+    }
+
+    document.getElementById('dashboard-section').style.display = 'block'
+  } catch (e) {
+    console.warn('Dashboard load error:', e.message)
+  }
+}
+
+// ── Auth: Google OAuth ─────────────────────────────────────────────────────
+async function signInWithGoogle() {
+  clearError()
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.href,
+    },
+  })
+  if (error) showError(error.message)
+}
+
+// ── Auth: Email/Password ───────────────────────────────────────────────────
+async function submitAuth(e) {
+  e.preventDefault()
+  clearError()
+
+  const email    = document.getElementById('auth-email').value.trim()
+  const password = document.getElementById('auth-password').value
+  const btn      = document.getElementById('auth-submit')
+
+  btn.disabled = true
+  btn.textContent = 'Connexion...'
+
+  if (isSignupMode) {
+    const confirm = document.getElementById('auth-confirm').value
+    if (password !== confirm) {
+      showError('Les mots de passe ne correspondent pas.')
+      btn.disabled = false
+      btn.textContent = "Créer le compte"
+      return
+    }
+    const { error } = await sb.auth.signUp({ email, password })
+    if (error) { showError(error.message); btn.disabled = false; btn.textContent = "Créer le compte"; return }
+    showError('✅ Vérifiez vos emails pour confirmer votre compte.')
+    document.getElementById('auth-error').style.background = 'rgba(39,174,96,.1)'
+    document.getElementById('auth-error').style.borderColor = 'rgba(39,174,96,.4)'
+    document.getElementById('auth-error').style.color = '#2ecc71'
+  } else {
+    const { error } = await sb.auth.signInWithPassword({ email, password })
+    if (error) { showError(error.message); btn.disabled = false; btn.textContent = "Se connecter"; return }
+  }
+
+  btn.disabled = false
+  btn.textContent = isSignupMode ? "Créer le compte" : "Se connecter"
+}
+
+function toggleMode() {
+  isSignupMode = !isSignupMode
+  clearError()
+  document.getElementById('auth-mode-title').textContent = isSignupMode ? 'Créer un compte' : 'Connexion'
+  document.getElementById('auth-submit').textContent    = isSignupMode ? 'Créer le compte' : 'Se connecter'
+  document.getElementById('confirm-field').style.display = isSignupMode ? 'block' : 'none'
+  document.getElementById('auth-switch').innerHTML = isSignupMode
+    ? 'Déjà un compte ? <a onclick="toggleMode()">Se connecter</a>'
+    : 'Pas de compte ? <a onclick="toggleMode()">Créer un compte</a>'
+  document.getElementById('forgot-link').style.display = isSignupMode ? 'none' : 'block'
+}
+
+async function forgotPassword() {
+  const email = document.getElementById('auth-email').value.trim()
+  if (!email) { showError('Entrez votre email ci-dessus.'); return }
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.href,
+  })
+  if (error) showError(error.message)
+  else showError('✅ Email de réinitialisation envoyé.')
+}
+
+async function signOut() {
+  await sb.auth.signOut()
+}
+
+function showAuth() {
+  document.getElementById('loading').style.display = 'none'
+  document.getElementById('auth-screen').style.display = 'flex'
+  document.getElementById('app-screen').style.display = 'none'
+}
+
+function showError(msg) {
+  const el = document.getElementById('auth-error')
+  el.textContent = msg
+  el.classList.add('visible')
+}
+function clearError() {
+  const el = document.getElementById('auth-error')
+  el.classList.remove('visible')
+  el.style = ''
+}
+
+// ── Bot token setup ────────────────────────────────────────────────────────
+async function saveBotToken() {
+  const token = document.getElementById('bot-token-input').value.trim()
+  if (!token) return
+
+  const btn = document.getElementById('btn-save-bot')
+  const msg = document.getElementById('bot-msg')
+  btn.disabled = true
+  msg.className = 'save-msg'
+  msg.textContent = 'Enregistrement...'
+  msg.style.display = 'inline'
+
+  try {
+    const res = await fetch(`${API_BASE}/onboarding/bot`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${currentSession.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        bot_token: token,
+        webhook_base_url: API_BASE,
+      }),
+    })
+
+    if (res.ok) {
+      msg.textContent = '✓ Bot connecté ! Ouvrez Telegram et tapez /start'
+      msg.className = 'save-msg ok'
+      document.getElementById('bot-token-input').value = ''
+      document.getElementById('step1-num').classList.add('done')
+      document.getElementById('step1-num').textContent = '✓'
+    } else {
+      const err = await res.json().catch(() => ({}))
+      msg.textContent = err.detail || 'Erreur — vérifiez le token.'
+      msg.className = 'save-msg err'
+    }
+  } catch (e) {
+    msg.textContent = 'Impossible de joindre le serveur.'
+    msg.className = 'save-msg err'
+  }
+
+  btn.disabled = false
+}
+
+// ── Values CRUD ────────────────────────────────────────────────────────────
+let valuesCache = []
+
+function renderValuesList(values) {
+  valuesCache = values
+  const el = document.getElementById('values-list')
+  if (!values.length) { el.innerHTML = ''; return }
+  el.innerHTML = values.map(v => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:0.5px solid rgba(245,240,232,.06)">
+      <div>
+        <span style="font-size:14px;color:var(--vellum)">${v.name}</span>
+        ${v.description ? `<span style="font-size:12px;color:var(--ash);margin-left:10px">${v.description}</span>` : ''}
+      </div>
+      <button onclick="deleteValue('${v.id}')" style="background:none;border:none;color:var(--ash);cursor:pointer;font-size:18px;padding:0 4px;line-height:1" title="Supprimer">×</button>
+    </div>
+  `).join('')
+}
+
+async function addValue() {
+  const name = document.getElementById('value-name-input').value.trim()
+  const desc = document.getElementById('value-desc-input').value.trim()
+  const msg  = document.getElementById('values-msg')
+  if (!name) return
+
+  msg.textContent = 'Ajout...'
+  msg.className = 'save-msg'
+  msg.style.display = 'inline'
+
+  try {
+    const res = await fetch(`${API_BASE}/values`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${currentSession.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name, description: desc }),
+    })
+    if (res.ok) {
+      const updated = await fetch(`${API_BASE}/values`, {
+        headers: { 'Authorization': `Bearer ${currentSession.access_token}` },
+      }).then(r => r.json())
+      renderValuesList(updated)
+      document.getElementById('stat-values').textContent = updated.length
+      document.getElementById('step2-num').classList.add('done')
+      document.getElementById('step2-num').textContent = '✓'
+      document.getElementById('value-name-input').value = ''
+      document.getElementById('value-desc-input').value = ''
+      msg.textContent = '✓ Ajoutée'
+      msg.className = 'save-msg ok'
+    } else {
+      msg.textContent = 'Erreur'
+      msg.className = 'save-msg err'
+    }
+  } catch (e) {
+    msg.textContent = 'Serveur inaccessible'
+    msg.className = 'save-msg err'
+  }
+}
+
+async function deleteValue(id) {
+  try {
+    await fetch(`${API_BASE}/values/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${currentSession.access_token}` },
+    })
+    const updated = valuesCache.filter(v => v.id !== id)
+    renderValuesList(updated)
+    document.getElementById('stat-values').textContent = updated.length
+  } catch (e) {
+    console.warn('Delete failed', e)
+  }
+}
+
+// ── Run ────────────────────────────────────────────────────────────────────
+init()
+</script>
+</body>
+</html>

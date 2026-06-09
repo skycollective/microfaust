@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MicroFaust — Votre âme est votre intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Cinzel:wght@400;600&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
+<!-- Supabase JS -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --ink: #0a0804; --vellum: #f5f0e8; --amber: #c8902a;
+  --ember: #e85d1a; --ash: #8a7f6e; --smoke: #2a2520; --gold: #d4a843;
+}
+html { scroll-behavior: smooth; }
+body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', sans-serif; font-weight: 300; overflow-x: hidden; }
+body::before { content: ''; position: fixed; inset: 0; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E"); opacity: 0.03; pointer-events: none; z-index: 1000; }
+nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 24px 48px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(to bottom, rgba(10,8,4,.95) 0%, transparent 100%); }
+.nav-logo { display: flex; align-items: baseline; }
+.nav-logo .nm { font-family: 'Cinzel', serif; font-size: 16px; font-weight: 600; letter-spacing: .06em; color: var(--vellum); text-transform: uppercase; }
+.nav-logo .nf { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-style: italic; color: var(--gold); margin-left: 2px; }
+.nav-cta { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--vellum); text-decoration: none; border: 0.5px solid rgba(212,168,67,.4); padding: 8px 20px; transition: all .3s; cursor: pointer; background: none; font-family: 'DM Sans', sans-serif; }
+.nav-cta:hover { border-color: var(--gold); color: var(--gold); }
+.hero { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 120px 48px 80px; position: relative; overflow: hidden; }
+.hero-bg { position: absolute; inset: 0; background: radial-gradient(ellipse 60% 50% at 50% 60%, rgba(200,144,42,.07) 0%, transparent 70%), radial-gradient(ellipse 40% 30% at 20% 80%, rgba(232,93,26,.04) 0%, transparent 60%); }
+.hero-ornament { font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--amber); margin-bottom: 32px; opacity: 0; animation: fadeUp .8s .2s forwards; }
+.hero-title { font-family: 'Cinzel', serif; font-size: clamp(56px, 10vw, 120px); font-weight: 600; line-height: .9; color: var(--vellum); margin-bottom: 8px; opacity: 0; animation: fadeUp .8s .4s forwards; }
+.hero-title span { color: var(--gold); font-style: italic; font-family: 'Cormorant Garamond', serif; font-size: 1.1em; }
+.hero-subtitle { font-family: 'Cormorant Garamond', serif; font-size: clamp(18px, 3vw, 28px); font-style: italic; color: var(--ash); margin-bottom: 48px; max-width: 600px; line-height: 1.4; opacity: 0; animation: fadeUp .8s .6s forwards; }
+.hero-tagline { font-size: 13px; letter-spacing: .05em; color: rgba(245,240,232,.5); margin-bottom: 56px; max-width: 500px; line-height: 1.8; opacity: 0; animation: fadeUp .8s .7s forwards; }
+.hero-tagline strong { color: var(--vellum); }
+.cta-group { display: flex; gap: 16px; align-items: center; opacity: 0; animation: fadeUp .8s .9s forwards; flex-wrap: wrap; justify-content: center; }
+.btn-primary { background: var(--amber); color: var(--ink); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 400; letter-spacing: .1em; text-transform: uppercase; padding: 16px 40px; border: none; cursor: pointer; transition: all .3s; text-decoration: none; display: inline-block; }
+.btn-primary:hover { background: var(--gold); transform: translateY(-1px); }
+.btn-secondary { font-family: 'DM Sans', sans-serif; font-size: 13px; letter-spacing: .05em; color: var(--ash); text-decoration: none; border-bottom: 0.5px solid var(--ash); padding-bottom: 2px; transition: color .3s, border-color .3s; }
+.btn-secondary:hover { color: var(--vellum); border-color: var(--vellum); }
+.divider { text-align: center; padding: 40px 0; color: var(--amber); opacity: .4; font-size: 20px; letter-spacing: .5em; }
+.philosophy { padding: 80px 48px; max-width: 900px; margin: 0 auto; text-align: center; }
+.philosophy-quote { font-family: 'Cormorant Garamond', serif; font-size: clamp(24px, 4vw, 40px); font-style: italic; line-height: 1.4; color: var(--vellum); margin-bottom: 24px; }
+.philosophy-quote em { color: var(--gold); font-style: normal; }
+.philosophy-attr { font-size: 12px; letter-spacing: .2em; text-transform: uppercase; color: var(--ash); }
+.how { padding: 80px 48px; max-width: 1100px; margin: 0 auto; }
+.section-label { font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--amber); margin-bottom: 16px; text-align: center; }
+.section-title { font-family: 'Cinzel', serif; font-size: clamp(28px, 4vw, 44px); text-align: center; margin-bottom: 64px; color: var(--vellum); line-height: 1.2; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2px; background: rgba(245,240,232,.06); }
+.step { background: var(--ink); padding: 40px 32px; transition: background .3s; }
+.step:hover { background: var(--smoke); }
+.step-num { font-family: 'Cinzel', serif; font-size: 48px; color: rgba(200,144,42,.15); margin-bottom: 16px; line-height: 1; }
+.step-title { font-family: 'Cormorant Garamond', serif; font-size: 20px; font-weight: 600; color: var(--gold); margin-bottom: 12px; }
+.step-desc { font-size: 13px; line-height: 1.7; color: var(--ash); }
+.features { padding: 80px 48px; max-width: 1100px; margin: 0 auto; }
+.features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1px; background: rgba(245,240,232,.06); }
+.feature { background: var(--ink); padding: 40px 36px; transition: background .3s; position: relative; overflow: hidden; }
+.feature::before { content: ''; position: absolute; top: 0; left: 0; width: 2px; height: 0; background: var(--amber); transition: height .4s; }
+.feature:hover { background: var(--smoke); }
+.feature:hover::before { height: 100%; }
+.feature-icon { font-size: 28px; margin-bottom: 20px; display: block; }
+.feature-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: .08em; color: var(--gold); margin-bottom: 12px; }
+.feature-desc { font-size: 13px; line-height: 1.8; color: var(--ash); }
+.feature-desc strong { color: var(--vellum); font-weight: 400; }
+.demo { padding: 80px 48px; max-width: 700px; margin: 0 auto; text-align: center; }
+.chat-window { background: var(--smoke); border: 0.5px solid rgba(200,144,42,.2); padding: 32px; text-align: left; margin-top: 48px; }
+.chat-msg { margin-bottom: 20px; opacity: 0; animation: fadeUp .5s forwards; }
+.chat-msg:nth-child(1){animation-delay:.1s}.chat-msg:nth-child(2){animation-delay:.3s}.chat-msg:nth-child(3){animation-delay:.5s}.chat-msg:nth-child(4){animation-delay:.7s}
+.chat-sender { font-size: 10px; letter-spacing: .15em; text-transform: uppercase; margin-bottom: 6px; }
+.chat-sender.you { color: var(--amber); }
+.chat-sender.mf { color: var(--ash); }
+.chat-bubble { font-family: 'Cormorant Garamond', serif; font-size: 16px; line-height: 1.6; padding: 14px 18px; display: inline-block; max-width: 90%; }
+.chat-bubble.you { background: rgba(200,144,42,.1); border-left: 2px solid var(--amber); color: var(--vellum); }
+.chat-bubble.mf { background: rgba(245,240,232,.04); border-left: 2px solid rgba(138,127,110,.3); color: var(--ash); font-style: italic; }
+.chat-bubble.mf strong { color: var(--vellum); font-style: normal; }
+.pricing { padding: 80px 48px; max-width: 900px; margin: 0 auto; text-align: center; }
+.price-cards { display: grid; grid-template-columns: 1fr; max-width: 420px; margin: 48px auto 0; gap: 2px; }
+.price-card { background: var(--smoke); padding: 52px 48px; text-align: center; }
+.price-badge { font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink); background: var(--amber); padding: 4px 12px; display: inline-block; margin-bottom: 24px; }
+.price-name { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: .1em; color: var(--gold); margin-bottom: 8px; }
+.price-amount { font-family: 'Cormorant Garamond', serif; font-size: 56px; color: var(--vellum); line-height: 1; margin-bottom: 4px; }
+.price-period { font-size: 12px; color: var(--ash); margin-bottom: 32px; }
+.price-features { list-style: none; text-align: left; }
+.price-features li { font-size: 13px; color: var(--ash); padding: 8px 0; border-bottom: 0.5px solid rgba(245,240,232,.06); display: flex; gap: 10px; }
+.price-features li::before { content: '—'; color: var(--amber); flex-shrink: 0; }
+.price-cta { display: block; margin-top: 32px; padding: 14px; text-align: center; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; text-decoration: none; background: var(--amber); color: var(--ink); border: none; cursor: pointer; transition: all .3s; font-family: 'DM Sans', sans-serif; }
+.price-cta:hover { background: var(--gold); }
+.final { padding: 120px 48px; text-align: center; position: relative; overflow: hidden; }
+.final::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 50% 60% at 50% 50%, rgba(200,144,42,.06) 0%, transparent 70%); }
+.final-title { font-family: 'Cormorant Garamond', serif; font-size: clamp(32px, 6vw, 64px); font-style: italic; line-height: 1.2; color: var(--vellum); margin-bottom: 24px; position: relative; }
+.final-title em { color: var(--gold); font-style: normal; }
+.final-sub { font-size: 14px; color: var(--ash); margin-bottom: 48px; position: relative; max-width: 520px; margin-left: auto; margin-right: auto; line-height: 1.9; }
+footer { padding: 40px 48px; border-top: 0.5px solid rgba(245,240,232,.08); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+.footer-note { font-size: 11px; color: var(--ash); opacity: .5; letter-spacing: .05em; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.fade-in { opacity: 0; transform: translateY(24px); transition: opacity .7s, transform .7s; }
+.fade-in.visible { opacity: 1; transform: none; }
+.scroll-hint { position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; opacity: 0; animation: fadeUp .8s 1.4s forwards; }
+.scroll-line { width: 1px; height: 40px; background: linear-gradient(to bottom, var(--amber), transparent); animation: scrollPulse 2s infinite; }
+@keyframes scrollPulse { 0%,100%{opacity:.3}50%{opacity:1} }
+.scroll-label { font-size: 10px; letter-spacing: .3em; text-transform: uppercase; color: var(--ash); }
+.sigil { font-family: 'Cormorant Garamond', serif; font-size: 200px; color: rgba(200,144,42,.04); position: absolute; pointer-events: none; line-height: 1; user-select: none; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo"><span class="nm">Micro</span><span class="nf">Faust</span></div>
+  <button class="nav-cta" onclick="openSignup()">Commencer</button>
+</nav>
+
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="sigil" style="top:-40px;right:-60px;transform:rotate(15deg)">ψ</div>
+  <p class="hero-ornament">Votre intelligence. Amplifiée.</p>
+  <h1 class="hero-title"><span style="color:var(--vellum);font-style:normal">Micro</span><span>Faust</span></h1>
+  <p class="hero-subtitle">Faust a vendu son âme pour le savoir.<br>Vous gardez la vôtre.</p>
+  <p class="hero-tagline">Un conseiller IA qui connaît <strong>vos valeurs</strong>, consulte <strong>votre conseil d'experts</strong>,<br>se souvient de <strong>tout ce que vous pensez</strong> — disponible sur Telegram, à tout instant.</p>
+  <div class="cta-group">
+    <button class="btn-primary" onclick="openSignup()">Essayer 14 jours gratuits</button>
+    <a href="#features" class="btn-secondary">Découvrir comment</a>
+  </div>
+  <div class="scroll-hint"><div class="scroll-line"></div><span class="scroll-label">Défiler</span></div>
+</section>
+
+<div class="divider fade-in">✦ ✦ ✦</div>
+<section class="philosophy fade-in">
+  <p class="philosophy-quote">"La plupart des outils IA vous oublient dès que vous fermez l'onglet.<br>MicroFaust ne vous oublie <em>jamais</em>."</p>
+  <p class="philosophy-attr">— Le problème que nous résolvons</p>
+</section>
+<div class="divider fade-in">✦</div>
+
+<section class="how fade-in" id="features">
+  <p class="section-label">Comment ça fonctionne</p>
+  <h2 class="section-title">Trois éléments. Une présence.</h2>
+  <div class="steps">
+    <div class="step fade-in"><div class="step-num">01</div><div class="step-title">Vos valeurs</div><p class="step-desc">Définissez ce qui vous guide. MicroFaust ancre chaque réponse dans vos principes. Pas dans les siens.</p></div>
+    <div class="step fade-in"><div class="step-num">02</div><div class="step-title">Votre conseil</div><p class="step-desc">Composez votre conseil de 10 experts — stratège, avocat du diable, stoïcien, visionnaire. Ils délibèrent ensemble.</p></div>
+    <div class="step fade-in"><div class="step-num">03</div><div class="step-title">Votre mémoire</div><p class="step-desc">Tout ce que vous pensez, décidez, observez — capturé via Telegram, stocké, retrouvé sémantiquement.</p></div>
+    <div class="step fade-in"><div class="step-num">04</div><div class="step-title">Votre journal</div><p class="step-desc">Chaque matin, un briefing. Chaque soir, un bilan. Vos décisions tracées et connectées sur le long terme.</p></div>
+  </div>
+</section>
+
+<section class="features fade-in" style="padding-top:40px">
+  <p class="section-label">Fonctionnalités</p>
+  <h2 class="section-title">Ce que MicroFaust fait pour vous</h2>
+  <div class="features-grid">
+    <div class="feature fade-in"><span class="feature-icon">🧠</span><div class="feature-title">Mémoire persistante</div><p class="feature-desc">Chaque pensée capturée sur Telegram est <strong>stockée et retrouvable sémantiquement</strong>.</p></div>
+    <div class="feature fade-in"><span class="feature-icon">🏛️</span><div class="feature-title">Conseil de 10 experts</div><p class="feature-desc">Configurez 10 personas d'experts. Face à une décision complexe, <strong>ils délibèrent ensemble</strong>.</p></div>
+    <div class="feature fade-in"><span class="feature-icon">⚖️</span><div class="feature-title">Journal de décisions</div><p class="feature-desc">Chaque décision loggée avec contexte et analyse. <strong>Retrouvez vos patterns</strong>.</p></div>
+    <div class="feature fade-in"><span class="feature-icon">📅</span><div class="feature-title">Google Agenda</div><p class="feature-desc">Briefs pré-réunion enrichis de votre mémoire. <strong>Créez des événements depuis Telegram</strong>.</p></div>
+    <div class="feature fade-in"><span class="feature-icon">💬</span><div class="feature-title">Interface Telegram</div><p class="feature-desc">Pas d'app à ouvrir. MicroFaust est dans <strong>votre Telegram</strong>.</p></div>
+    <div class="feature fade-in"><span class="feature-icon">🔐</span><div class="feature-title">Vos données, vos règles</div><p class="feature-desc"><strong>Isolement total</strong>. Vos pensées ne sont jamais partagées, jamais entraînées.</p></div>
+  </div>
+</section>
+
+<section class="demo fade-in">
+  <p class="section-label">En pratique</p>
+  <h2 class="section-title">Conversations réelles</h2>
+  <div class="chat-window">
+    <div class="chat-msg"><div class="chat-sender you">Vous</div><div class="chat-bubble you">MicroFaust, j'hésite à refuser ce projet. Il est lucratif mais il ne m'inspire pas.</div></div>
+    <div class="chat-msg"><div class="chat-sender mf">MicroFaust</div><div class="chat-bubble mf">Votre valeur n°1 est l'<strong>impact authentique</strong>. Votre stratège dirait : <strong>"Un projet qui ne t'inspire pas te coûte plus qu'il ne te rapporte."</strong> Votre avocat du diable : <strong>"Ou il finance le prochain qui t'inspire."</strong> Qu'est-ce que vous voulez vraiment ?</div></div>
+    <div class="chat-msg"><div class="chat-sender you">Vous</div><div class="chat-bubble you">Note : j'ai dit non. Et j'ai dormi profondément.</div></div>
+    <div class="chat-msg"><div class="chat-sender mf">MicroFaust</div><div class="chat-bubble mf"><strong>Capturé.</strong> C'est votre 4ème décision ce mois alignée avec votre valeur d'impact.</div></div>
+  </div>
+</section>
+
+<section class="pricing fade-in" id="early">
+  <p class="section-label">Tarifs</p>
+  <h2 class="section-title">Simple. Transparent.</h2>
+  <div class="price-cards">
+    <div class="price-card">
+      <span class="price-badge">Accès complet</span>
+      <div class="price-name">Alchimiste</div>
+      <div class="price-amount">160€</div>
+      <div class="price-period">par an · soit 13,33 € / mois · sans engagement</div>
+      <ul class="price-features">
+        <li>Conseil de 10 experts personnalisés</li>
+        <li>Mémoire illimitée (OpenBrain)</li>
+        <li>Journal de décisions &amp; valeurs</li>
+        <li>Google Agenda connecté</li>
+        <li>Briefs intelligents pré-réunion</li>
+        <li>Interface Telegram complète</li>
+        <li>14 jours d'essai gratuit</li>
+      </ul>
+      <button class="price-cta" onclick="openSignup()">Essayer 14 jours gratuits</button>
+    </div>
+  </div>
+</section>
+
+<section class="final fade-in">
+  <h2 class="final-title">Faust a vendu son âme.<br>Vous, vous la <em>cultivez</em>.</h2>
+  <p class="final-sub">Vos valeurs, votre conseil, votre mémoire deviennent le moteur. Vous restez l'auteur.</p>
+  <button class="btn-primary" onclick="openSignup()">Signer le pacte — 14 jours gratuits</button>
+</section>
+
+<footer>
+  <div style="display:flex;align-items:baseline;gap:0"><span style="font-family:'Cinzel',serif;font-size:14px;font-weight:600;letter-spacing:.06em;color:rgba(245,240,232,.4);text-transform:uppercase">Micro</span><span style="font-family:'Cormorant Garamond',serif;font-size:18px;font-style:italic;color:rgba(212,168,67,.4);margin-left:2px">Faust</span></div>
+  <div class="footer-note">Propulsé par OpenBrain · Supabase · Claude · Telegram</div>
+  <div class="footer-note">© 2026 MicroFaust — Tous droits réservés</div>
+</footer>
+
+<script>
+// ── Supabase init ──────────────────────────────────────────────────────────
+const SUPABASE_URL  = 'REPLACE_WITH_SUPABASE_URL'
+const SUPABASE_ANON = 'REPLACE_WITH_SUPABASE_ANON_KEY'
+const { createClient } = supabase
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON)
+
+// If already logged in, redirect to app
+sb.auth.getSession().then(({ data }) => {
+  if (data.session) window.location.href = 'app.html'
+})
+
+function openSignup() {
+  window.location.href = 'app.html'
+}
+
+// ── Scroll animations ──────────────────────────────────────────────────────
+const observer = new IntersectionObserver(
+  entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible') }),
+  { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+)
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el))
+</script>
+</body>
+</html>

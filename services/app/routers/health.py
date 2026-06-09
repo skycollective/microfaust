@@ -1,0 +1,46 @@
+"""P-01: /health/queue — stale job monitor + alert."""
+import logging
+import os
+
+import asyncpg
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/health")
+
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "")
+ALERT_WEBHOOK_URL = os.environ.get("ALERT_WEBHOOK_URL", "")
+
+
+def _require_admin(request: Request):
+    if request.headers.get("X-Admin-Secret") != ADMIN_SECRET:
+        raise HTTPException(status_code=403)
+
+
+@router.get("/queue")
+async def queue_health(request: Request, _=Depends(_require_admin)):
+    pool: asyncpg.Pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        stale = await conn.fetchval(
+            """SELECT COUNT(*) FROM job_queue
+               WHERE status='pending' AND scheduled_at < NOW()-INTERVAL '5 minutes'"""
+        )
+        dead = await conn.fetchval(
+            "SELECT COUNT(*) FROM job_queue WHERE status='dead'"
+        )
+    if stale > 0:
+        await _alert(f"{stale} stale job(s) pending > 5 min")
+    return {"stale_jobs": stale, "dead_jobs": dead,
+            "status": "ok" if stale == 0 else "degraded"}
+
+
+async def _alert(msg: str):
+    if not ALERT_WEBHOOK_URL:
+        logger.warning("ALERT (no webhook): %s", msg)
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            await c.post(ALERT_WEBHOOK_URL, json={"text": f"⚠️ MICROFAUST: {msg}"})
+    except Exception as e:
+        logger.error("Alert send failed: %s", e)

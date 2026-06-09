@@ -1,0 +1,133 @@
+"""
+Onboarding — two endpoints:
+  POST /auth/sync       Called after Supabase login — creates tenant row if needed
+  POST /onboarding/bot  Registers Telegram bot token + webhook
+"""
+import logging
+import os
+import uuid
+
+import asyncpg
+import httpx
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+BASE_URL = os.environ.get("BASE_URL", "")
+
+
+# ── Auth sync ────────────────────────────────────────────────────────────────
+
+@router.post("/auth/sync")
+async def auth_sync(request: Request):
+    """
+    Called by the frontend immediately after Supabase login.
+    Creates a tenants row if this is a new user.
+    Returns tenant metadata needed by the frontend.
+    """
+    supabase_user_id = request.state.tenant_id
+    if not supabase_user_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Extract email from Supabase JWT claims
+    auth = request.headers.get("Authorization", "")[7:]
+    email = _extract_email_from_jwt(auth)
+
+    pool: asyncpg.Pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT id, telegram_chat_id FROM tenants WHERE id = $1",
+            uuid.UUID(supabase_user_id),
+        )
+        if not existing:
+            await conn.execute(
+                "INSERT INTO tenants (id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                uuid.UUID(supabase_user_id), email,
+            )
+            telegram_chat_id = None
+        else:
+            telegram_chat_id = existing["telegram_chat_id"]
+
+    return {
+        "tenant_id": supabase_user_id,
+        "onboarding_complete": telegram_chat_id is not None,
+    }
+
+
+# ── Bot registration ─────────────────────────────────────────────────────────
+
+class BotRequest(BaseModel):
+    telegram_bot_token: str
+    timezone: str = "Europe/Paris"
+
+
+@router.post("/onboarding/bot")
+async def register_bot(body: BotRequest, request: Request):
+    tenant_id = request.state.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    bot_info = await _validate_bot_token(body.telegram_bot_token)
+    if not bot_info:
+        raise HTTPException(status_code=400, detail="Invalid Telegram bot token")
+
+    pool: asyncpg.Pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        # P-04: token stored, never logged
+        await conn.execute(
+            """UPDATE tenants
+               SET telegram_bot_token=$2, timezone=$3
+               WHERE id=$1""",
+            uuid.UUID(tenant_id), body.telegram_bot_token, body.timezone,
+        )
+
+    webhook_url = f"{BASE_URL}/webhook/{tenant_id}"
+    await _register_webhook(body.telegram_bot_token, webhook_url)
+
+    return {
+        "webhook_url": webhook_url,
+        "bot_username": bot_info.get("username"),
+        "next": "Send /start to your bot on Telegram",
+    }
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _extract_email_from_jwt(token: str) -> str | None:
+    import os
+    from jose import jwt, JWTError
+    try:
+        payload = jwt.decode(
+            token,
+            os.environ.get("SUPABASE_JWT_SECRET", ""),
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+        return payload.get("email")
+    except JWTError:
+        return None
+
+
+async def _validate_bot_token(token: str) -> dict | None:
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"https://api.telegram.org/bot{token}/getMe")
+            if r.status_code == 200:
+                return r.json().get("result", {})
+    except Exception:
+        pass
+    return None
+
+
+async def _register_webhook(token: str, url: str) -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"https://api.telegram.org/bot{token}/setWebhook",
+                json={"url": url, "drop_pending_updates": True},
+            )
+            return r.status_code == 200 and r.json().get("ok")
+    except Exception:
+        return False
