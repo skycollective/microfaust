@@ -14,6 +14,7 @@ from handlers.telegram_message import handle_telegram_message
 from handlers.telegram_start import handle_telegram_start
 from handlers.cron_morning import handle_cron_morning
 from handlers.cron_evening import handle_cron_evening
+from handlers.cron_weekly import handle_cron_weekly_review
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ HANDLERS = {
     "telegram_start":    handle_telegram_start,
     "cron_morning":      handle_cron_morning,
     "cron_evening":      handle_cron_evening,
+    "cron_weekly_review": handle_cron_weekly_review,
 }
 
 
