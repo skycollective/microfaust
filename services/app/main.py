@@ -31,7 +31,9 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── DB pool (shared by API + Worker) ──────────────────────────────
-    pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+    pool = await asyncpg.create_pool(
+        DATABASE_URL, min_size=2, max_size=10, statement_cache_size=0
+    )
     app.state.pool = pool
 
     # ── Worker: startup drain (clear jobs queued while we were down) ──
@@ -39,7 +41,7 @@ async def lifespan(app: FastAPI):
     await drain(pool)
 
     # ── Worker: LISTEN/NOTIFY fast path ───────────────────────────────
-    listen_conn = await asyncpg.connect(DATABASE_URL)
+    listen_conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
     await start_listener(listen_conn, pool)
 
     # ── Worker: 60-second safety net (P-01) ───────────────────────────
