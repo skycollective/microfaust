@@ -2,6 +2,8 @@ import logging
 from datetime import date
 import asyncpg, httpx
 
+from calendar_client import list_today_events, format_events_for_telegram
+
 logger = logging.getLogger(__name__)
 
 async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
@@ -9,7 +11,8 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
     async with pool.acquire() as conn:
         await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
         tenant = await conn.fetchrow(
-            "SELECT telegram_bot_token, telegram_chat_id FROM tenants WHERE id=$1", tenant_id
+            "SELECT telegram_bot_token, telegram_chat_id, composio_entity_id FROM tenants WHERE id=$1",
+            tenant_id,
         )
         if not tenant or not tenant["telegram_chat_id"]:
             return
@@ -24,18 +27,26 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
             tenant_id,
         )
 
-    token   = tenant["telegram_bot_token"]
-    chat_id = tenant["telegram_chat_id"]
+    token     = tenant["telegram_bot_token"]
+    chat_id   = tenant["telegram_chat_id"]
+    entity_id = tenant["composio_entity_id"]
 
     habit_lines = "\n".join(f"• {h['name']}" for h in habits) or "• Aucune habitude ce matin"
     weather = await _get_weather()
 
+    # Fetch calendar events if tenant has connected Google Calendar
+    if entity_id:
+        events = await list_today_events(entity_id)
+        agenda_section = f"📅 Reunions du jour :\n{format_events_for_telegram(events)}"
+    else:
+        agenda_section = "📅 Agenda : tapez /agenda pour connecter Google Calendar"
+
     text = (
-        "☀️ Bonjour !\n\n"
-        "📅 Agenda du jour : /agenda pour voir vos réunions\n\n"
-        f"🏃 Habitudes du matin :\n{habit_lines}\n\n"
-        f"🌤️ {weather}\n\n"
-        "Bonne journée !"
+        "Bonjour !\n\n"
+        f"{agenda_section}\n\n"
+        f"Habitudes du matin :\n{habit_lines}\n\n"
+        f"{weather}\n\n"
+        "Bonne journee !"
     )
     await _send(token, chat_id, text)
 

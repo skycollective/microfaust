@@ -226,7 +226,20 @@ body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', san
       <span class="save-msg" id="bot-msg"></span>
     </div>
 
-    <!-- ── Setup step 2: Values ────────────────────────── -->
+    <!-- ── Setup step 2: Google Calendar ─────────────────── -->
+    <div class="setup-card" id="card-calendar">
+      <div class="setup-card-header">
+        <div class="setup-step-num" id="step-cal-num">02</div>
+        <div>
+          <div class="setup-title">Connecter Google Calendar</div>
+          <div class="setup-desc">Recevez vos reunions dans le briefing du matin et tapez /agenda sur Telegram.</div>
+        </div>
+      </div>
+      <button class="btn-save" id="btn-connect-calendar" onclick="connectCalendar()">Connecter Google Calendar</button>
+      <span class="save-msg" id="cal-msg"></span>
+    </div>
+
+    <!-- ── Setup step 3: Values ────────────────────────── -->
     <div class="setup-card" id="card-values">
       <div class="setup-card-header">
         <div class="setup-step-num" id="step2-num">02</div>
@@ -484,6 +497,43 @@ function clearError() {
   const el = document.getElementById('auth-error')
   el.classList.remove('visible')
   el.style = ''
+}
+
+// ── Calendar connect ───────────────────────────────────────────────────────
+async function connectCalendar() {
+  const btn = document.getElementById('btn-connect-calendar')
+  const msg = document.getElementById('cal-msg')
+  btn.disabled = true
+  msg.textContent = 'Connexion en cours...'
+  msg.className = 'save-msg'
+  msg.style.display = 'inline'
+
+  try {
+    const res = await fetch(`${API_BASE}/onboarding/calendar`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${currentSession.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    })
+    if (res.ok) {
+      const data = await res.json()
+      window.open(data.oauth_url, '_blank')
+      msg.textContent = 'Une fenetre s\'est ouverte — autorisez l\'acces puis revenez ici.'
+      msg.className = 'save-msg ok'
+      document.getElementById('step-cal-num').classList.add('done')
+      document.getElementById('step-cal-num').textContent = '✓'
+    } else {
+      const err = await res.json().catch(() => ({}))
+      msg.textContent = err.detail || 'Erreur — reessayez.'
+      msg.className = 'save-msg err'
+      btn.disabled = false
+    }
+  } catch (e) {
+    msg.textContent = 'Erreur reseau.'
+    msg.className = 'save-msg err'
+    btn.disabled = false
+  }
 }
 
 // ── Bot token setup ────────────────────────────────────────────────────────

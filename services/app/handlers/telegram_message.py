@@ -6,12 +6,24 @@ P-04: bot token never logged
 import json, logging, re
 import asyncpg, httpx
 
+from calendar_client import list_today_events, create_event, format_events_for_telegram
+
 logger = logging.getLogger(__name__)
 
-FORGET_ALL  = re.compile(r"^/forget\s+all$", re.IGNORECASE)
+FORGET_ALL   = re.compile(r"^/forget\s+all$", re.IGNORECASE)
 FORGET_TOPIC = re.compile(r"^/forget\s+(.+)$", re.IGNORECASE)
-HABIT_ADD   = re.compile(r"^add habit:\s*(.+)$", re.IGNORECASE)
-DECIDE_CMD  = re.compile(r"^/decide\s*(.*)", re.IGNORECASE | re.DOTALL)
+HABIT_ADD    = re.compile(r"^add habit:\s*(.+)$", re.IGNORECASE)
+DECIDE_CMD   = re.compile(r"^/decide\s*(.*)", re.IGNORECASE | re.DOTALL)
+AGENDA_CMD   = re.compile(r"^/agenda$", re.IGNORECASE)
+# Natural language patterns for calendar intent
+CALENDAR_VIEW = re.compile(
+    r"(mon agenda|mes reunions?|quelles? reunions?|qu.est.ce que j.ai|qu.ai.je|programme du jour|what.*meeting|my (schedule|calendar|meetings?))",
+    re.IGNORECASE,
+)
+CALENDAR_CREATE = re.compile(
+    r"(cree[rz]?|ajoute[rz]?|planifie[rz]?|schedule|add.*meeting|reunions? avec|rendez.?vous avec)",
+    re.IGNORECASE,
+)
 
 
 async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
@@ -23,12 +35,13 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
     async with pool.acquire() as conn:
         await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
         tenant = await conn.fetchrow(
-            "SELECT telegram_bot_token FROM tenants WHERE id=$1", tenant_id
+            "SELECT telegram_bot_token, composio_entity_id FROM tenants WHERE id=$1", tenant_id
         )
     if not tenant:
         return
 
-    token = tenant["telegram_bot_token"]
+    token     = tenant["telegram_bot_token"]
+    entity_id = tenant["composio_entity_id"]
 
     if FORGET_ALL.match(text):
         await _forget_all_confirm(pool, tenant_id, token, chat_id)
@@ -38,10 +51,13 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
         await _add_habit(pool, tenant_id, m.group(1), token, chat_id)
     elif DECIDE_CMD.match(text):
         await _send(token, chat_id,
-            "Conseil en cours de délibération... (intégration LLM à venir)")
+            "Conseil en cours de deliberation... (integration LLM a venir)")
+    elif AGENDA_CMD.match(text) or CALENDAR_VIEW.search(text):
+        await _show_agenda(entity_id, token, chat_id)
+    elif CALENDAR_CREATE.search(text):
+        await _handle_calendar_create(entity_id, text, token, chat_id)
     else:
-        # Default: capture as thought (placeholder for full LLM routing)
-        await _send(token, chat_id, f"✅ Capturé en mémoire.")
+        await _send(token, chat_id, "Capture en memoire.")
         await _mark_responded(pool, tenant_id)
 
 
@@ -87,6 +103,34 @@ async def _mark_responded(pool, tenant_id):
                  AND user_responded=false""",
             tenant_id,
         )
+
+
+async def _show_agenda(entity_id: str | None, token: str, chat_id: str):
+    if not entity_id:
+        await _send(token, chat_id,
+            "Google Calendar pas encore connecte.\n"
+            "Connectez-le sur microfaust.vercel.app dans la section Agenda."
+        )
+        return
+    events = await list_today_events(entity_id)
+    text = "Vos reunions aujourd'hui :\n\n" + format_events_for_telegram(events)
+    await _send(token, chat_id, text)
+
+
+async def _handle_calendar_create(entity_id: str | None, text: str,
+                                   token: str, chat_id: str):
+    if not entity_id:
+        await _send(token, chat_id,
+            "Google Calendar pas encore connecte.\n"
+            "Connectez-le sur microfaust.vercel.app dans la section Agenda."
+        )
+        return
+    # Ask Claude to parse the intent — for now send a clear prompt back
+    await _send(token, chat_id,
+        "Pour creer un evenement, utilisez ce format :\n"
+        "Reunions: [titre] le [date] de [heure debut] a [heure fin]\n\n"
+        "Exemple : Reunions: Demo client le 20 juin de 14h a 15h"
+    )
 
 
 async def _send(token: str, chat_id: str, text: str):

@@ -1,7 +1,9 @@
 """
-Onboarding — two endpoints:
-  POST /auth/sync       Called after Supabase login — creates tenant row if needed
-  POST /onboarding/bot  Registers Telegram bot token + webhook
+Onboarding — endpoints:
+  POST /auth/sync           Called after Supabase login — creates tenant row if needed
+  POST /onboarding/bot      Registers Telegram bot token + webhook
+  POST /onboarding/calendar Starts Composio Google Calendar OAuth flow
+  GET  /onboarding/calendar/callback  Composio redirects here after user auth
 """
 import logging
 import os
@@ -10,7 +12,10 @@ import uuid
 import asyncpg
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+
+from calendar_client import get_oauth_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -131,3 +136,43 @@ async def _register_webhook(token: str, url: str) -> bool:
             return r.status_code == 200 and r.json().get("ok")
     except Exception:
         return False
+
+
+# ── Calendar onboarding ──────────────────────────────────────────────────────
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://microfaust.vercel.app")
+
+
+@router.post("/onboarding/calendar")
+async def start_calendar_oauth(request: Request):
+    """
+    Returns a Composio OAuth URL for the tenant to connect Google Calendar.
+    Frontend opens this URL in a new tab.
+    """
+    tenant_id = request.state.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    redirect_url = f"{BASE_URL}/onboarding/calendar/callback?tenant_id={tenant_id}"
+    try:
+        oauth_url = await get_oauth_url(entity_id=tenant_id, redirect_url=redirect_url)
+    except Exception as e:
+        logger.error("Composio OAuth init failed: %s", e)
+        raise HTTPException(status_code=502, detail="Impossible de contacter Composio")
+
+    return {"oauth_url": oauth_url}
+
+
+@router.get("/onboarding/calendar/callback")
+async def calendar_oauth_callback(tenant_id: str, request: Request):
+    """
+    Composio redirects here after the user authorises Google Calendar.
+    We store the entity_id (tenant_id) and redirect back to the frontend.
+    """
+    pool: asyncpg.Pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE tenants SET composio_entity_id=$1 WHERE id=$2",
+            tenant_id, uuid.UUID(tenant_id),
+        )
+    return RedirectResponse(url=f"{FRONTEND_URL}/app.html?calendar=connected")
