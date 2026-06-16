@@ -78,28 +78,45 @@ async def composio_debug(request: Request):
     except Exception as e:
         result["toolset_error"] = str(e)
 
-    # Test v3 REST API — probe multiple candidate endpoints
+    # Find the actual API base URL the SDK uses
+    try:
+        import composio.client as _cc
+        result["sdk_base_url"] = getattr(_cc, "COMPOSIO_BASE_URL",
+                                  getattr(_cc, "BASE_URL", "not found"))
+    except Exception as e:
+        result["sdk_base_url_error"] = str(e)
+
+    try:
+        from composio.constants import DEFAULT_BASE_URL
+        result["sdk_default_base_url"] = DEFAULT_BASE_URL
+    except Exception as e:
+        result["sdk_constants_error"] = str(e)
+
+    try:
+        import composio.utils.url as _url_mod
+        result["sdk_url_module"] = {k: v for k, v in vars(_url_mod).items()
+                                    if isinstance(v, str) and "http" in v}
+    except Exception as e:
+        result["sdk_url_module_error"] = str(e)
+
+    # Probe candidate API base URLs
     import httpx as _httpx
     api_key = os.environ.get("COMPOSIO_API_KEY", "")
-    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-
-    candidates = [
-        ("GET",  "https://backend.composio.dev/api/v3/apps"),
-        ("GET",  "https://backend.composio.dev/api/v3/user"),
-        ("GET",  "https://backend.composio.dev/api/v3/connectedAccounts"),
+    headers = {"x-api-key": api_key}
+    bases = [
+        "https://backend.composio.dev/api/v2",
+        "https://api.composio.dev/api/v1",
+        "https://api.composio.dev/v3",
+        "https://be.composio.dev/api/v3",
     ]
     result["probes"] = {}
-    async with _httpx.AsyncClient(timeout=10) as c:
-        for method, url in candidates:
+    async with _httpx.AsyncClient(timeout=8) as c:
+        for base in bases:
             try:
-                if method == "GET":
-                    r = await c.get(url, headers=headers)
-                else:
-                    r = await c.post(url, headers=headers, json={})
-                short = r.text[:120].replace("\n", " ")
-                result["probes"][url] = {"status": r.status_code, "body": short}
+                r = await c.get(f"{base}/apps", headers=headers)
+                result["probes"][base] = r.status_code
             except Exception as e:
-                result["probes"][url] = {"error": str(e)}
+                result["probes"][base] = str(e)[:60]
     return result
 
 
