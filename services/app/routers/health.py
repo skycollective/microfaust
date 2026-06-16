@@ -18,6 +18,36 @@ def _require_admin(request: Request):
         raise HTTPException(status_code=403)
 
 
+@router.get("/jwt-debug")
+async def jwt_debug(request: Request):
+    """Temporary: diagnose JWT verification without auth requirement."""
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:] if auth.startswith("Bearer ") else ""
+    if not token:
+        return {"error": "no token"}
+    import os
+    from jose import jwt as jose_jwt, JWTError
+    secret = os.environ.get("SUPABASE_JWT_SECRET", "")
+    result = {"has_secret": bool(secret), "token_length": len(token)}
+    # Try HS256
+    try:
+        payload = jose_jwt.decode(token, secret, algorithms=["HS256"],
+                                  options={"verify_aud": False})
+        result["hs256"] = "ok"
+        result["sub"] = payload.get("sub")
+        return result
+    except JWTError as e:
+        result["hs256_error"] = str(e)
+    # Try without verification to inspect header
+    try:
+        header = jose_jwt.get_unverified_header(token)
+        result["token_alg"] = header.get("alg")
+        result["token_kid"] = header.get("kid")
+    except Exception as e:
+        result["header_error"] = str(e)
+    return result
+
+
 @router.get("/queue")
 async def queue_health(request: Request, _=Depends(_require_admin)):
     pool: asyncpg.Pool = request.app.state.pool

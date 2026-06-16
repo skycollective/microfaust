@@ -55,6 +55,8 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             return None
         if request.url.path.startswith("/health"):
             return None
+        if request.url.path.startswith("/onboarding/calendar/callback"):
+            return None
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             return await _verify_supabase_jwt(auth[7:])
