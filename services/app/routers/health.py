@@ -82,7 +82,7 @@ async def composio_debug(request: Request):
     try:
         import httpx as _httpx
         r = await _httpx.AsyncClient(timeout=10).get(
-            "https://backend.composio.dev/api/v1/apps/googlecalendar",
+            "https://backend.composio.dev/api/v3/apps/googlecalendar",
             headers={"x-api-key": os.environ.get("COMPOSIO_API_KEY", "")},
         )
         result["rest_api_status"] = r.status_code

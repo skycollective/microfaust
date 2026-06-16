@@ -34,9 +34,8 @@ async def get_oauth_url(entity_id: str, redirect_url: str) -> str:
         raise ValueError("COMPOSIO_API_KEY not set")
 
     async with httpx.AsyncClient(timeout=15) as client:
-        # Composio v1 connected accounts endpoint
         r = await client.post(
-            "https://backend.composio.dev/api/v1/connectedAccounts",
+            "https://backend.composio.dev/api/v3/connectedAccounts",
             headers={
                 "x-api-key": COMPOSIO_API_KEY,
                 "Content-Type": "application/json",
@@ -47,13 +46,14 @@ async def get_oauth_url(entity_id: str, redirect_url: str) -> str:
                 "redirectUri": redirect_url,
             },
         )
-        logger.info("Composio connectedAccounts status=%s body=%s", r.status_code, r.text[:300])
+        logger.info("Composio v3 connectedAccounts status=%s body=%s", r.status_code, r.text[:300])
         if r.status_code not in (200, 201):
-            raise ValueError(f"Composio API error {r.status_code}: {r.text[:200]}")
+            raise ValueError(f"Composio v3 API error {r.status_code}: {r.text[:200]}")
         data = r.json()
-        url = data.get("redirectUrl") or data.get("redirect_url") or data.get("connectionUrl")
+        url = (data.get("redirectUrl") or data.get("redirect_url")
+               or data.get("connectionUrl") or data.get("authUrl"))
         if not url:
-            raise ValueError(f"No redirect URL in Composio response: {data}")
+            raise ValueError(f"No redirect URL in Composio v3 response: {data}")
         return url
 
 
