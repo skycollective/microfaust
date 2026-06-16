@@ -99,24 +99,26 @@ async def composio_debug(request: Request):
     except Exception as e:
         result["sdk_url_module_error"] = str(e)
 
-    # Probe candidate API base URLs
+    # Probe connectedAccounts POST — the exact endpoint get_oauth_url needs
     import httpx as _httpx
     api_key = os.environ.get("COMPOSIO_API_KEY", "")
-    headers = {"x-api-key": api_key}
-    bases = [
-        "https://backend.composio.dev/api/v2",
-        "https://api.composio.dev/api/v1",
-        "https://api.composio.dev/v3",
-        "https://be.composio.dev/api/v3",
-    ]
+    h = {"x-api-key": api_key, "Content-Type": "application/json"}
+    body = {"appName": "googlecalendar", "entityId": "debug-test", "redirectUri": "https://example.com"}
+
     result["probes"] = {}
     async with _httpx.AsyncClient(timeout=8) as c:
-        for base in bases:
+        for url in [
+            "https://backend.composio.dev/api/v1/connectedAccounts",
+            "https://backend.composio.dev/api/v2/connectedAccounts",
+            "https://backend.composio.dev/api/v3/connectedAccounts",
+            "https://backend.composio.dev/api/v3/toolsets/connections",
+            "https://backend.composio.dev/api/v3/connections",
+        ]:
             try:
-                r = await c.get(f"{base}/apps", headers=headers)
-                result["probes"][base] = r.status_code
+                r = await c.post(url, headers=h, json=body)
+                result["probes"][url] = {"status": r.status_code, "body": r.text[:150]}
             except Exception as e:
-                result["probes"][base] = str(e)[:60]
+                result["probes"][url] = str(e)[:80]
     return result
 
 
