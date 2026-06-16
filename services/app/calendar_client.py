@@ -10,25 +10,43 @@ logger = logging.getLogger(__name__)
 
 COMPOSIO_API_KEY = os.environ.get("COMPOSIO_API_KEY", "")
 
+# App name for Google Calendar — varies by composio-core version
+_GCAL_APP_NAMES = ["GOOGLECALENDAR", "GOOGLE_CALENDAR", "googlecalendar", "google_calendar"]
 
-def _get_toolset(entity_id: str):
-    from composio_openai import ComposioToolSet
-    return ComposioToolSet(api_key=COMPOSIO_API_KEY, entity_id=entity_id)
+
+def _get_gcal_app():
+    """Return the App enum value for Google Calendar, trying known names across versions."""
+    from composio import App
+    for name in _GCAL_APP_NAMES:
+        try:
+            return getattr(App, name)
+        except AttributeError:
+            continue
+    # Last resort: pass string directly (works in some versions)
+    return "GOOGLECALENDAR"
 
 
 async def get_oauth_url(entity_id: str, redirect_url: str) -> str:
     """Return Composio OAuth initiation URL for Google Calendar."""
-    from composio import ComposioToolSet, App
     import asyncio
+    from composio import ComposioToolSet
 
     def _initiate():
+        if not COMPOSIO_API_KEY:
+            raise ValueError("COMPOSIO_API_KEY not set")
         toolset = ComposioToolSet(api_key=COMPOSIO_API_KEY)
         entity = toolset.get_entity(entity_id)
+        app = _get_gcal_app()
+        logger.info("Composio initiate_connection app=%s entity=%s", app, entity_id)
         request = entity.initiate_connection(
-            app=App.GOOGLECALENDAR,
+            app=app,
             redirect_url=redirect_url,
         )
-        return request.redirectUrl
+        # redirectUrl vs redirect_url depends on SDK version
+        url = getattr(request, "redirectUrl", None) or getattr(request, "redirect_url", None)
+        if not url:
+            raise ValueError(f"No redirect URL in response: {vars(request)}")
+        return url
 
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _initiate)

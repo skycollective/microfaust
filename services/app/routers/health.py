@@ -48,6 +48,38 @@ async def jwt_debug(request: Request):
     return result
 
 
+@router.get("/composio-debug")
+async def composio_debug(request: Request):
+    """Diagnose Composio SDK — no auth needed, remove before production."""
+    import os
+    result = {"api_key_set": bool(os.environ.get("COMPOSIO_API_KEY"))}
+    try:
+        import composio
+        result["composio_version"] = getattr(composio, "__version__", "unknown")
+    except ImportError as e:
+        result["import_error"] = str(e)
+        return result
+    try:
+        from composio import App
+        gcal_names = ["GOOGLECALENDAR", "GOOGLE_CALENDAR", "googlecalendar"]
+        for name in gcal_names:
+            if hasattr(App, name):
+                result["app_enum"] = name
+                break
+        else:
+            result["app_enum"] = "NOT FOUND"
+            result["available_apps"] = [a for a in dir(App) if "GOOGLE" in a.upper()]
+    except Exception as e:
+        result["app_error"] = str(e)
+    try:
+        from composio import ComposioToolSet
+        toolset = ComposioToolSet(api_key=os.environ.get("COMPOSIO_API_KEY", ""))
+        result["toolset_ok"] = True
+    except Exception as e:
+        result["toolset_error"] = str(e)
+    return result
+
+
 @router.get("/queue")
 async def queue_health(request: Request, _=Depends(_require_admin)):
     pool: asyncpg.Pool = request.app.state.pool

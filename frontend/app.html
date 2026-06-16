@@ -111,6 +111,17 @@ body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', san
 .save-msg.ok { color: var(--ok); display: inline; }
 .save-msg.err { color: var(--error); display: inline; }
 
+/* Council member cards */
+.council-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 20px; }
+.council-card { background: rgba(200,144,42,.06); border: 0.5px solid rgba(200,144,42,.2); padding: 16px; position: relative; }
+.council-card-name { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: .08em; color: var(--gold); margin-bottom: 4px; }
+.council-card-role { font-size: 11px; color: var(--ash); line-height: 1.4; }
+.council-card-del { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--ash); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; }
+.council-card-del:hover { color: var(--error); }
+.council-add-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+.council-add-form textarea { grid-column: 1 / -1; width: 100%; padding: 10px 14px; background: rgba(255,255,255,.04); border: 0.5px solid rgba(245,240,232,.12); color: var(--vellum); font-family: 'DM Sans', sans-serif; font-size: 13px; outline: none; resize: vertical; min-height: 72px; transition: border-color .2s; }
+.council-add-form textarea:focus { border-color: var(--amber); }
+
 /* Dashboard grid */
 .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2px; background: rgba(245,240,232,.06); margin-top: 40px; }
 .dash-card { background: var(--ink); padding: 32px; transition: background .3s; }
@@ -243,10 +254,37 @@ body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', san
       <span class="save-msg" id="cal-msg"></span>
     </div>
 
-    <!-- ── Setup step 3: Values ────────────────────────── -->
+    <!-- ── Setup step 3: Council ─────────────────────── -->
+    <div class="setup-card" id="card-council">
+      <div class="setup-card-header">
+        <div class="setup-step-num" id="step-council-num">03</div>
+        <div>
+          <div class="setup-title">Votre Conseil</div>
+          <div class="setup-desc">Des conseillers personnels qui analysent vos décisions depuis des angles opposés. Tapez <b>conseil sur [décision]</b> sur Telegram pour les convoquer.</div>
+        </div>
+      </div>
+      <div class="council-grid" id="council-list"></div>
+      <div class="council-add-form">
+        <div class="setup-field" style="margin-bottom:0">
+          <label>Nom du conseiller</label>
+          <input type="text" id="council-name-input" placeholder="ex: Stratège" maxlength="60">
+        </div>
+        <div class="setup-field" style="margin-bottom:0">
+          <label>Rôle (court)</label>
+          <input type="text" id="council-role-input" placeholder="ex: Conséquences long terme" maxlength="80">
+        </div>
+        <textarea id="council-prompt-input" placeholder="Instructions pour ce conseiller — comment doit-il analyser une décision ? Quel angle unique défend-il ?"></textarea>
+        <div style="grid-column:1/-1;display:flex;align-items:center;gap:12px">
+          <button class="btn-save" onclick="addCouncilMember()">Ajouter</button>
+          <span class="save-msg" id="council-msg"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Setup step 4: Values ────────────────────────── -->
     <div class="setup-card" id="card-values">
       <div class="setup-card-header">
-        <div class="setup-step-num" id="step2-num">02</div>
+        <div class="setup-step-num" id="step2-num">04</div>
         <div>
           <div class="setup-title">Vos valeurs</div>
           <div class="setup-desc">Définissez ce qui vous guide. Ces valeurs ancreront chaque réponse de MicroFaust.</div>
@@ -381,6 +419,11 @@ async function syncWithBackend(session) {
         calNum.classList.add('done')
         calNum.textContent = '✓'
       }
+      if (data.council_configured) {
+        const cNum = document.getElementById('step-council-num')
+        cNum.classList.add('done')
+        cNum.textContent = '✓'
+      }
     } else {
       console.warn('Backend sync returned', res.status)
     }
@@ -419,6 +462,8 @@ async function loadDashboard(session) {
         telEl.className = 'dash-status warn'
       }
     }
+
+    await loadCouncil(session)
 
     document.getElementById('dashboard-section').style.display = 'block'
   } catch (e) {
@@ -666,6 +711,102 @@ async function deleteValue(id) {
     document.getElementById('stat-values').textContent = updated.length
   } catch (e) {
     console.warn('Delete failed', e)
+  }
+}
+
+// ── Council CRUD ───────────────────────────────────────────────────────────
+let councilCache = []
+
+async function loadCouncil(session) {
+  try {
+    const res = await fetch(`${API_BASE}/council`, {
+      headers: { 'Authorization': `Bearer ${session.access_token}` },
+    })
+    if (res.ok) {
+      const members = await res.json()
+      councilCache = members
+      renderCouncil(members)
+      if (members.length > 0) {
+        document.getElementById('step-council-num').classList.add('done')
+        document.getElementById('step-council-num').textContent = '✓'
+      }
+    }
+  } catch (e) {
+    console.warn('Council load error:', e.message)
+  }
+}
+
+function renderCouncil(members) {
+  const el = document.getElementById('council-list')
+  if (!members.length) {
+    el.innerHTML = '<p style="font-size:13px;color:var(--ash);margin-bottom:12px">Aucun conseiller configuré — ajoutez-en un ci-dessous.</p>'
+    return
+  }
+  el.innerHTML = members.map(m => `
+    <div class="council-card">
+      <button class="council-card-del" onclick="deleteCouncilMember('${m.id}')" title="Supprimer">×</button>
+      <div class="council-card-name">${m.name}</div>
+      <div class="council-card-role">${m.role || ''}</div>
+    </div>
+  `).join('')
+}
+
+async function addCouncilMember() {
+  const name   = document.getElementById('council-name-input').value.trim()
+  const role   = document.getElementById('council-role-input').value.trim()
+  const prompt = document.getElementById('council-prompt-input').value.trim()
+  const msg    = document.getElementById('council-msg')
+  if (!name || !prompt) {
+    msg.textContent = 'Nom et instructions requis.'
+    msg.className = 'save-msg err'
+    return
+  }
+
+  msg.textContent = 'Ajout...'
+  msg.className = 'save-msg'
+  msg.style.display = 'inline'
+
+  try {
+    const res = await fetch(`${API_BASE}/council`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${currentSession.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name, role, system_prompt: prompt, active: true }),
+    })
+    if (res.ok) {
+      document.getElementById('council-name-input').value = ''
+      document.getElementById('council-role-input').value = ''
+      document.getElementById('council-prompt-input').value = ''
+      msg.textContent = '✓ Conseiller ajouté'
+      msg.className = 'save-msg ok'
+      await loadCouncil(currentSession)
+    } else {
+      const err = await res.json().catch(() => ({}))
+      msg.textContent = err.detail || 'Erreur'
+      msg.className = 'save-msg err'
+    }
+  } catch (e) {
+    msg.textContent = 'Serveur inaccessible'
+    msg.className = 'save-msg err'
+  }
+}
+
+async function deleteCouncilMember(id) {
+  try {
+    await fetch(`${API_BASE}/council/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${currentSession.access_token}` },
+    })
+    councilCache = councilCache.filter(m => m.id !== id)
+    renderCouncil(councilCache)
+    if (councilCache.length === 0) {
+      document.getElementById('step-council-num').classList.remove('done')
+      document.getElementById('step-council-num').textContent = '03'
+    }
+  } catch (e) {
+    console.warn('Delete council member failed', e)
   }
 }
 

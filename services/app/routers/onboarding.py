@@ -51,16 +51,22 @@ async def auth_sync(request: Request):
                 "INSERT INTO tenants (id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING",
                 uuid.UUID(supabase_user_id), email,
             )
-            telegram_chat_id = None
+            telegram_chat_id   = None
             composio_entity_id = None
         else:
-            telegram_chat_id    = existing["telegram_chat_id"]
-            composio_entity_id  = existing["composio_entity_id"]
+            telegram_chat_id   = existing["telegram_chat_id"]
+            composio_entity_id = existing["composio_entity_id"]
+
+        council_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM skills WHERE tenant_id=$1 AND active=true",
+            uuid.UUID(supabase_user_id),
+        )
 
     return {
-        "tenant_id":          supabase_user_id,
+        "tenant_id":           supabase_user_id,
         "onboarding_complete": telegram_chat_id is not None,
         "calendar_connected":  composio_entity_id is not None,
+        "council_configured":  (council_count or 0) > 0,
     }
 
 
