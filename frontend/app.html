@@ -506,8 +506,7 @@ async function saveBotToken() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        bot_token: token,
-        webhook_base_url: API_BASE,
+        telegram_bot_token: token,
       }),
     })
 
