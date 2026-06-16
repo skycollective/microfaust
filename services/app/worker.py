@@ -63,7 +63,7 @@ async def _process(pool: asyncpg.Pool, job: asyncpg.Record) -> None:
         await handler(pool, job)
         await _set_status(pool, job["id"], "done")
     except Exception as exc:
-        logger.error("Job %s (%s) failed: %s", job["id"], job["job_type"], exc)
+        logger.error("Job %s (%s) failed: %s", job["id"], job["job_type"], exc, exc_info=True)
         await _fail(pool, job["id"], str(exc))
 
 
