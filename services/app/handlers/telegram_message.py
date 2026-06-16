@@ -144,10 +144,22 @@ async def _route_with_claude(text: str, lang: str) -> dict:
             return {"intent": "unknown", "reply": _t(lang, "C'est note.", "Got it.")}
 
         content = r.json()["content"][0]["text"].strip()
+        # Strip code fences
         if content.startswith("```"):
             content = re.sub(r"^```\w*\n?", "", content)
             content = re.sub(r"\n?```$", "", content)
-        return json.loads(content)
+        content = content.strip()
+        # Extract first JSON object if surrounded by extra text
+        m = re.search(r"\{.*\}", content, re.DOTALL)
+        if m:
+            content = m.group(0)
+        parsed = json.loads(content)
+        # Normalise keys — Claude sometimes returns '"intent"' with embedded quotes
+        normalised = {k.strip('"'): v for k, v in parsed.items()}
+        if "intent" not in normalised:
+            logger.error("Claude returned JSON without intent key: %s", parsed)
+            return {"intent": "unknown", "reply": _t(lang, "C'est note.", "Got it.")}
+        return normalised
     except Exception as e:
         logger.error("Claude intent routing failed: %s", e)
         return {"intent": "unknown", "reply": _t(lang, "C'est note.", "Got it.")}
