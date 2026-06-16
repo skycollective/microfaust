@@ -92,15 +92,29 @@ async def _get_access_token(pool: asyncpg.Pool, tenant_id: uuid.UUID) -> str | N
         return None
 
 
-async def list_today_events(tenant_id: uuid.UUID, pool: asyncpg.Pool) -> list[dict]:
-    """Fetch today's Google Calendar events for a tenant."""
+async def list_events_range(tenant_id: uuid.UUID, pool: asyncpg.Pool,
+                            timeframe: str = "today") -> list[dict]:
+    """Fetch Google Calendar events for a tenant. timeframe: today | tomorrow | week"""
     token = await _get_access_token(pool, tenant_id)
     if not token:
         return []
 
-    now       = datetime.now(timezone.utc)
-    time_min  = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    time_max  = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+    from zoneinfo import ZoneInfo
+    paris = ZoneInfo("Europe/Paris")
+    now = datetime.now(paris)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if timeframe == "tomorrow":
+        from datetime import timedelta
+        start = today + timedelta(days=1)
+        end   = start.replace(hour=23, minute=59, second=59)
+    elif timeframe == "week":
+        from datetime import timedelta
+        start = today
+        end   = today + timedelta(days=7)
+    else:  # today
+        start = today
+        end   = today.replace(hour=23, minute=59, second=59)
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -108,11 +122,11 @@ async def list_today_events(tenant_id: uuid.UUID, pool: asyncpg.Pool) -> list[di
                 f"{GOOGLE_CALENDAR_BASE}/calendars/primary/events",
                 headers={"Authorization": f"Bearer {token}"},
                 params={
-                    "timeMin":      time_min,
-                    "timeMax":      time_max,
+                    "timeMin":      start.isoformat(),
+                    "timeMax":      end.isoformat(),
                     "singleEvents": "true",
                     "orderBy":      "startTime",
-                    "maxResults":   "10",
+                    "maxResults":   "20",
                 },
             )
             r.raise_for_status()
@@ -120,6 +134,10 @@ async def list_today_events(tenant_id: uuid.UUID, pool: asyncpg.Pool) -> list[di
     except Exception as e:
         logger.error("Google Calendar list_events failed tenant=%s: %s", tenant_id, e)
         return []
+
+
+async def list_today_events(tenant_id: uuid.UUID, pool: asyncpg.Pool) -> list[dict]:
+    return await list_events_range(tenant_id, pool, "today")
 
 
 async def create_event(tenant_id: uuid.UUID, pool: asyncpg.Pool,

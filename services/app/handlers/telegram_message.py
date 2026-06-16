@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import asyncpg
 import httpx
 
-from calendar_client import list_today_events, create_event, format_events_for_telegram
+from calendar_client import list_events_range, create_event, format_events_for_telegram
 import uuid as _uuid
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,8 @@ _INTENT_SYSTEM = (
     "- capture_thought: user is noting something (idea, todo, reminder, watchlist item, anything to remember)\n"
     "- add_habit: user wants to track a recurring habit\n"
     "- complete_habit: user says they finished a habit (done meditating, finished run, etc.)\n"
-    "- show_agenda: user wants to see today's calendar or meetings\n"
+    "- show_agenda: user wants to see calendar or meetings — set data.timeframe to 'today', 'tomorrow', or 'week'\n"
+    "- show_thoughts: user wants to see their saved notes, todos, ideas, or memory\n"
     "- create_event: user wants to add a calendar event or meeting\n"
     "- invoke_council: user wants advice on a decision or multiple perspectives\n"
     "- language_switch_en: user wants to switch to English\n"
@@ -46,6 +47,7 @@ _INTENT_SYSTEM = (
     "- unknown: none of the above fits\n\n"
     "Rules:\n"
     "- For create_event: include title, start, end in ISO 8601 format in 'data' if mentioned\n"
+    "- For show_agenda: always set data.timeframe — default 'today', use 'tomorrow' or 'week' if user says so\n"
     "- For capture_thought: confirm you saved it, briefly echo what you understood\n"
     "- For greetings: respond warmly and briefly\n"
     "- For unknown: acknowledge naturally, ask if there's something specific they need\n"
@@ -102,7 +104,9 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
     elif intent == "complete_habit":
         await _log_habit_completion(pool, tenant_id, token, chat_id, reply)
     elif intent == "show_agenda":
-        await _show_agenda(tenant_id, pool, token, chat_id, lang)
+        await _show_agenda(tenant_id, pool, token, chat_id, lang, data.get("timeframe", "today"))
+    elif intent == "show_thoughts":
+        await _show_thoughts(pool, tenant_id, token, chat_id, lang)
     elif intent == "create_event":
         await _handle_calendar_create(tenant_id, pool, data, token, chat_id, lang)
     elif intent == "invoke_council":
@@ -341,16 +345,35 @@ async def _forget_topic(pool, tenant_id, topic, token, chat_id, lang="fr"):
 
 # ── Calendar ──────────────────────────────────────────────────────────────────
 
-async def _show_agenda(tenant_id, pool, token: str, chat_id: str, lang: str = "fr"):
-    events = await list_today_events(_uuid.UUID(str(tenant_id)), pool)
-    if events is None:
-        await _send(token, chat_id, _t(lang,
-            "Google Calendar pas encore connecte.\nConnectez-le sur microfaust.vercel.app.",
-            "Google Calendar not connected yet.\nConnect it at microfaust.vercel.app.",
-        ))
-        return
-    header = _t(lang, "Vos reunions aujourd'hui :", "Your meetings today:")
+async def _show_agenda(tenant_id, pool, token: str, chat_id: str, lang: str = "fr",
+                       timeframe: str = "today"):
+    events = await list_events_range(_uuid.UUID(str(tenant_id)), pool, timeframe)
+    headers = {
+        "today":    _t(lang, "Vos reunions aujourd'hui :", "Your meetings today:"),
+        "tomorrow": _t(lang, "Vos reunions demain :", "Your meetings tomorrow:"),
+        "week":     _t(lang, "Vos reunions cette semaine :", "Your meetings this week:"),
+    }
+    header = headers.get(timeframe, headers["today"])
     await _send(token, chat_id, header + "\n\n" + format_events_for_telegram(events))
+
+
+async def _show_thoughts(pool, tenant_id, token: str, chat_id: str, lang: str = "fr"):
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            rows = await conn.fetch(
+                "SELECT content, created_at FROM thoughts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 10",
+                tenant_id,
+            )
+    except Exception as e:
+        logger.error("show_thoughts failed: %s", e)
+        rows = []
+    if not rows:
+        await _send(token, chat_id, _t(lang, "Aucune note sauvegardee.", "No saved notes yet."))
+        return
+    lines = [f"- {r['content']}" for r in rows]
+    header = _t(lang, "Vos dernières notes :", "Your recent notes:")
+    await _send(token, chat_id, header + "\n\n" + "\n".join(lines))
 
 
 async def _handle_calendar_create(tenant_id, pool, data: dict,

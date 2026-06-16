@@ -2,7 +2,7 @@ import logging
 from datetime import date
 import asyncpg, httpx
 
-from calendar_client import list_today_events, format_events_for_telegram
+from calendar_client import list_events_range, format_events_for_telegram
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
 
     # Fetch calendar events if Google Calendar is connected
     import uuid
-    events = await list_today_events(uuid.UUID(str(tenant_id)), pool)
+    events = await list_events_range(uuid.UUID(str(tenant_id)), pool, "today")
     if events:
         agenda_section = f"📅 Reunions du jour :\n{format_events_for_telegram(events)}"
     elif events is not None:
