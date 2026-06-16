@@ -78,20 +78,28 @@ async def composio_debug(request: Request):
     except Exception as e:
         result["toolset_error"] = str(e)
 
-    # Test the REST API directly (what get_oauth_url now uses)
-    try:
-        import httpx as _httpx
-        r = await _httpx.AsyncClient(timeout=10).get(
-            "https://backend.composio.dev/api/v3/apps/googlecalendar",
-            headers={"x-api-key": os.environ.get("COMPOSIO_API_KEY", "")},
-        )
-        result["rest_api_status"] = r.status_code
-        if r.status_code == 200:
-            result["rest_api_ok"] = True
-        else:
-            result["rest_api_body"] = r.text[:200]
-    except Exception as e:
-        result["rest_api_error"] = str(e)
+    # Test v3 REST API — probe multiple candidate endpoints
+    import httpx as _httpx
+    api_key = os.environ.get("COMPOSIO_API_KEY", "")
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+
+    candidates = [
+        ("GET",  "https://backend.composio.dev/api/v3/apps"),
+        ("GET",  "https://backend.composio.dev/api/v3/user"),
+        ("GET",  "https://backend.composio.dev/api/v3/connectedAccounts"),
+    ]
+    result["probes"] = {}
+    async with _httpx.AsyncClient(timeout=10) as c:
+        for method, url in candidates:
+            try:
+                if method == "GET":
+                    r = await c.get(url, headers=headers)
+                else:
+                    r = await c.post(url, headers=headers, json={})
+                short = r.text[:120].replace("\n", " ")
+                result["probes"][url] = {"status": r.status_code, "body": short}
+            except Exception as e:
+                result["probes"][url] = {"error": str(e)}
     return result
 
 
