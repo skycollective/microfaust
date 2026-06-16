@@ -7,5 +7,5 @@ pydantic==2.8.2
 pydantic-settings==2.4.0
 python-dotenv==1.0.1
 anthropic==0.34.2
-composio-core>=0.7.22
+composio-core
 openai==1.45.0
