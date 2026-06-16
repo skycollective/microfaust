@@ -19,17 +19,22 @@ async def get_oauth_url(entity_id: str, redirect_url: str) -> str:
     async with httpx.AsyncClient(timeout=15) as c:
         r = await c.post(
             f"{COMPOSIO_BASE}/connectedAccounts",
-            headers={"x-api-key": COMPOSIO_API_KEY},
+            headers={
+                "x-api-key": COMPOSIO_API_KEY,
+                "Content-Type": "application/json",
+            },
             json={
                 "appName": "googlecalendar",
                 "entityId": entity_id,
                 "redirectUri": redirect_url,
                 "authMode": "OAUTH2",
+                "integrationId": None,
             },
         )
+        logger.error("Composio OAuth response: %s %s", r.status_code, r.text)
         r.raise_for_status()
         data = r.json()
-        return data["redirectUrl"]
+        return data.get("redirectUrl") or data.get("connectionUrl") or data["url"]
 
 
 async def list_today_events(entity_id: str) -> list[dict]:
