@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from calendar_client import get_oauth_url
+from calendar_client import build_oauth_url, exchange_code
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -147,41 +147,59 @@ async def _register_webhook(token: str, url: str) -> bool:
         return False
 
 
-# ── Calendar onboarding ──────────────────────────────────────────────────────
+# ── Calendar onboarding — Google OAuth direct ────────────────────────────────
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://microfaust.vercel.app")
+FRONTEND_URL   = os.environ.get("FRONTEND_URL", "https://microfaust.vercel.app")
+CALENDAR_CB    = f"{BASE_URL}/onboarding/calendar/callback"
 
 
 @router.post("/onboarding/calendar")
 async def start_calendar_oauth(request: Request):
-    """
-    Returns a Composio OAuth URL for the tenant to connect Google Calendar.
-    Frontend opens this URL in a new tab.
-    """
+    """Return Google OAuth URL. Frontend opens it in a new tab."""
     tenant_id = request.state.tenant_id
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Unauthorized")
-
-    redirect_url = f"{BASE_URL}/onboarding/calendar/callback?tenant_id={tenant_id}"
-    try:
-        oauth_url = await get_oauth_url(entity_id=tenant_id, redirect_url=redirect_url)
-    except Exception as e:
-        logger.error("Composio OAuth init failed: %s", e)
-        raise HTTPException(status_code=502, detail="Impossible de contacter Composio")
-
+    from calendar_client import GOOGLE_CLIENT_ID
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured")
+    oauth_url = build_oauth_url(tenant_id=tenant_id, redirect_uri=CALENDAR_CB)
     return {"oauth_url": oauth_url}
 
 
 @router.get("/onboarding/calendar/callback")
-async def calendar_oauth_callback(tenant_id: str, request: Request):
-    """
-    Composio redirects here after the user authorises Google Calendar.
-    We store the entity_id (tenant_id) and redirect back to the frontend.
-    """
+async def calendar_oauth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    """Google redirects here after user authorises Calendar access."""
+    if error or not code or not state:
+        return RedirectResponse(url=f"{FRONTEND_URL}/app.html?calendar=error")
+
+    try:
+        tokens = await exchange_code(code=code, redirect_uri=CALENDAR_CB)
+    except Exception as e:
+        logger.error("Google token exchange failed: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/app.html?calendar=error")
+
+    refresh_token = tokens.get("refresh_token")
+    access_token  = tokens.get("access_token")
+    expires_in    = tokens.get("expires_in", 3600)
+
+    if not refresh_token:
+        logger.error("Google did not return refresh_token — ensure prompt=consent")
+        return RedirectResponse(url=f"{FRONTEND_URL}/app.html?calendar=error")
+
+    from datetime import datetime, timedelta, timezone
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+
     pool: asyncpg.Pool = request.app.state.pool
     async with pool.acquire() as conn:
         await conn.execute(
-            "UPDATE tenants SET composio_entity_id=$1 WHERE id=$2",
-            tenant_id, uuid.UUID(tenant_id),
+            """UPDATE tenants
+               SET google_refresh_token=$1,
+                   google_access_token=$2,
+                   google_token_expiry=$3,
+                   composio_entity_id=$4
+               WHERE id=$5""",
+            refresh_token, access_token, expires_at,
+            state,          # reuse composio_entity_id field so calendar_connected stays true
+            uuid.UUID(state),
         )
     return RedirectResponse(url=f"{FRONTEND_URL}/app.html?calendar=connected")

@@ -11,7 +11,7 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
     async with pool.acquire() as conn:
         await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
         tenant = await conn.fetchrow(
-            "SELECT telegram_bot_token, telegram_chat_id, composio_entity_id FROM tenants WHERE id=$1",
+            "SELECT telegram_bot_token, telegram_chat_id FROM tenants WHERE id=$1",
             tenant_id,
         )
         if not tenant or not tenant["telegram_chat_id"]:
@@ -27,19 +27,21 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
             tenant_id,
         )
 
-    token     = tenant["telegram_bot_token"]
-    chat_id   = tenant["telegram_chat_id"]
-    entity_id = tenant["composio_entity_id"]
+    token   = tenant["telegram_bot_token"]
+    chat_id = tenant["telegram_chat_id"]
 
     habit_lines = "\n".join(f"• {h['name']}" for h in habits) or "• Aucune habitude ce matin"
     weather = await _get_weather()
 
-    # Fetch calendar events if tenant has connected Google Calendar
-    if entity_id:
-        events = await list_today_events(entity_id)
+    # Fetch calendar events if Google Calendar is connected
+    import uuid
+    events = await list_today_events(uuid.UUID(str(tenant_id)), pool)
+    if events:
         agenda_section = f"📅 Reunions du jour :\n{format_events_for_telegram(events)}"
+    elif events is not None:
+        agenda_section = "📅 Pas de reunion aujourd'hui"
     else:
-        agenda_section = "📅 Agenda : tapez /agenda pour connecter Google Calendar"
+        agenda_section = "📅 Agenda : connectez Google Calendar sur microfaust.vercel.app"
 
     text = (
         "Bonjour !\n\n"

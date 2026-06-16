@@ -1,118 +1,151 @@
 """
-Composio Google Calendar client — multi-tenant.
-Uses Composio Python SDK which handles API versioning internally.
+Google Calendar client — direct OAuth2, no third-party SDK.
+Tokens stored per-tenant in the tenants table.
 """
 import logging
 import os
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
+
+import asyncpg
+import httpx
 
 logger = logging.getLogger(__name__)
 
-COMPOSIO_API_KEY = os.environ.get("COMPOSIO_API_KEY", "")
-
-# App name for Google Calendar — varies by composio-core version
-_GCAL_APP_NAMES = ["GOOGLECALENDAR", "GOOGLE_CALENDAR", "googlecalendar", "google_calendar"]
-
-
-def _get_gcal_app():
-    """Return the App enum value for Google Calendar, trying known names across versions."""
-    from composio import App
-    for name in _GCAL_APP_NAMES:
-        try:
-            return getattr(App, name)
-        except AttributeError:
-            continue
-    # Last resort: pass string directly (works in some versions)
-    return "GOOGLECALENDAR"
+GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_TOKEN_URL     = "https://oauth2.googleapis.com/token"
+GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3"
+GOOGLE_SCOPES        = " ".join([
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+])
 
 
-async def get_oauth_url(entity_id: str, redirect_url: str) -> str:
-    """Return Composio OAuth initiation URL for Google Calendar.
-    Calls Composio REST API directly — avoids SDK constructor 410 issue.
-    """
-    if not COMPOSIO_API_KEY:
-        raise ValueError("COMPOSIO_API_KEY not set")
+def build_oauth_url(tenant_id: str, redirect_uri: str) -> str:
+    """Build the Google OAuth2 authorization URL."""
+    import urllib.parse
+    params = {
+        "client_id":     GOOGLE_CLIENT_ID,
+        "redirect_uri":  redirect_uri,
+        "response_type": "code",
+        "scope":         GOOGLE_SCOPES,
+        "access_type":   "offline",
+        "prompt":        "consent",   # always returns refresh_token
+        "state":         str(tenant_id),
+    }
+    return "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
 
+
+async def exchange_code(code: str, redirect_uri: str) -> dict:
+    """Exchange authorization code for access + refresh tokens."""
     async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.post(
-            "https://backend.composio.dev/api/v3/connectedAccounts",
-            headers={
-                "x-api-key": COMPOSIO_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json={
-                "appName": "googlecalendar",
-                "entityId": entity_id,
-                "redirectUri": redirect_url,
-            },
+        r = await client.post(GOOGLE_TOKEN_URL, data={
+            "code":          code,
+            "client_id":     GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri":  redirect_uri,
+            "grant_type":    "authorization_code",
+        })
+        r.raise_for_status()
+        return r.json()
+
+
+async def _get_access_token(pool: asyncpg.Pool, tenant_id: uuid.UUID) -> str | None:
+    """Return a valid access token, refreshing if needed."""
+    async with pool.acquire() as conn:
+        await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+        row = await conn.fetchrow(
+            "SELECT google_access_token, google_refresh_token, google_token_expiry FROM tenants WHERE id=$1",
+            tenant_id,
         )
-        logger.info("Composio v3 connectedAccounts status=%s body=%s", r.status_code, r.text[:300])
-        if r.status_code not in (200, 201):
-            raise ValueError(f"Composio v3 API error {r.status_code}: {r.text[:200]}")
-        data = r.json()
-        url = (data.get("redirectUrl") or data.get("redirect_url")
-               or data.get("connectionUrl") or data.get("authUrl"))
-        if not url:
-            raise ValueError(f"No redirect URL in Composio v3 response: {data}")
-        return url
+    if not row or not row["google_refresh_token"]:
+        return None
+
+    # Still valid with 5-min buffer
+    if row["google_token_expiry"] and row["google_token_expiry"] > datetime.now(timezone.utc) + timedelta(minutes=5):
+        return row["google_access_token"]
+
+    # Refresh
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(GOOGLE_TOKEN_URL, data={
+                "refresh_token": row["google_refresh_token"],
+                "client_id":     GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "grant_type":    "refresh_token",
+            })
+            r.raise_for_status()
+            data = r.json()
+
+        new_token  = data["access_token"]
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=data.get("expires_in", 3600))
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            await conn.execute(
+                "UPDATE tenants SET google_access_token=$1, google_token_expiry=$2 WHERE id=$3",
+                new_token, expires_at, tenant_id,
+            )
+        return new_token
+    except Exception as e:
+        logger.error("Google token refresh failed tenant=%s: %s", tenant_id, e)
+        return None
 
 
-async def list_today_events(entity_id: str) -> list[dict]:
+async def list_today_events(tenant_id: uuid.UUID, pool: asyncpg.Pool) -> list[dict]:
     """Fetch today's Google Calendar events for a tenant."""
-    now = datetime.now(timezone.utc)
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    day_end   = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+    token = await _get_access_token(pool, tenant_id)
+    if not token:
+        return []
+
+    now       = datetime.now(timezone.utc)
+    time_min  = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    time_max  = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
 
     try:
-        from composio import ComposioToolSet, Action
-        import asyncio
-
-        def _fetch():
-            toolset = ComposioToolSet(api_key=COMPOSIO_API_KEY, entity_id=entity_id)
-            result = toolset.execute_action(
-                action=Action.GOOGLECALENDAR_LIST_EVENTS,
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(
+                f"{GOOGLE_CALENDAR_BASE}/calendars/primary/events",
+                headers={"Authorization": f"Bearer {token}"},
                 params={
-                    "calendarId": "primary",
-                    "timeMin": day_start,
-                    "timeMax": day_end,
-                    "singleEvents": True,
-                    "orderBy": "startTime",
+                    "timeMin":      time_min,
+                    "timeMax":      time_max,
+                    "singleEvents": "true",
+                    "orderBy":      "startTime",
+                    "maxResults":   "10",
                 },
             )
-            return result.get("response", {}).get("items", [])
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _fetch)
+            r.raise_for_status()
+            return r.json().get("items", [])
     except Exception as e:
-        logger.error("Composio list_today_events failed entity=%s: %s", entity_id, e)
+        logger.error("Google Calendar list_events failed tenant=%s: %s", tenant_id, e)
         return []
 
 
-async def create_event(entity_id: str, summary: str, start: str, end: str,
+async def create_event(tenant_id: uuid.UUID, pool: asyncpg.Pool,
+                       summary: str, start: str, end: str,
                        description: str = "") -> dict | None:
     """Create a Google Calendar event for a tenant."""
-    try:
-        from composio import ComposioToolSet, Action
-        import asyncio
+    token = await _get_access_token(pool, tenant_id)
+    if not token:
+        return None
 
-        def _create():
-            toolset = ComposioToolSet(api_key=COMPOSIO_API_KEY, entity_id=entity_id)
-            result = toolset.execute_action(
-                action=Action.GOOGLECALENDAR_CREATE_EVENT,
-                params={
-                    "calendarId": "primary",
-                    "summary": summary,
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                f"{GOOGLE_CALENDAR_BASE}/calendars/primary/events",
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "summary":     summary,
                     "description": description,
                     "start": {"dateTime": start, "timeZone": "Europe/Paris"},
                     "end":   {"dateTime": end,   "timeZone": "Europe/Paris"},
                 },
             )
-            return result.get("response", {})
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _create)
+            r.raise_for_status()
+            return r.json()
     except Exception as e:
-        logger.error("Composio create_event failed entity=%s: %s", entity_id, e)
+        logger.error("Google Calendar create_event failed tenant=%s: %s", tenant_id, e)
         return None
 
 
@@ -122,14 +155,13 @@ def format_events_for_telegram(events: list[dict]) -> str:
         return "Aucune reunion aujourd'hui."
     lines = []
     for e in events:
-        start = e.get("start", {})
+        start    = e.get("start", {})
         time_str = start.get("dateTime", start.get("date", ""))
         if "T" in time_str:
             try:
-                dt = datetime.fromisoformat(time_str)
+                dt       = datetime.fromisoformat(time_str)
                 time_str = dt.strftime("%H:%M")
             except Exception:
                 pass
-        summary = e.get("summary", "Sans titre")
-        lines.append(f"  {time_str} - {summary}")
+        lines.append(f"  {time_str} - {e.get('summary', 'Sans titre')}")
     return "\n".join(lines)

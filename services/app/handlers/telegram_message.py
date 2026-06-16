@@ -16,6 +16,7 @@ import asyncpg
 import httpx
 
 from calendar_client import list_today_events, create_event, format_events_for_telegram
+import uuid as _uuid
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +103,9 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
     elif intent == "complete_habit":
         await _log_habit_completion(pool, tenant_id, token, chat_id, reply)
     elif intent == "show_agenda":
-        await _show_agenda(entity_id, token, chat_id, lang)
+        await _show_agenda(tenant_id, pool, token, chat_id, lang)
     elif intent == "create_event":
-        await _handle_calendar_create(entity_id, data, token, chat_id, lang)
+        await _handle_calendar_create(tenant_id, pool, data, token, chat_id, lang)
     elif intent == "invoke_council":
         await _invoke_council(text, token, chat_id, lang, pool=pool, tenant_id=tenant_id)
     else:
@@ -329,30 +330,24 @@ async def _forget_topic(pool, tenant_id, topic, token, chat_id, lang="fr"):
 
 # ── Calendar ──────────────────────────────────────────────────────────────────
 
-async def _show_agenda(entity_id: str | None, token: str, chat_id: str, lang: str = "fr"):
-    if not entity_id:
+async def _show_agenda(tenant_id, pool, token: str, chat_id: str, lang: str = "fr"):
+    events = await list_today_events(_uuid.UUID(str(tenant_id)), pool)
+    if events is None:
         await _send(token, chat_id, _t(lang,
-            "Google Calendar pas encore connecte.\nConnectez-le sur microfaust.vercel.app dans la section Agenda.",
-            "Google Calendar not connected yet.\nConnect it at microfaust.vercel.app in the Agenda section.",
+            "Google Calendar pas encore connecte.\nConnectez-le sur microfaust.vercel.app.",
+            "Google Calendar not connected yet.\nConnect it at microfaust.vercel.app.",
         ))
         return
-    events = await list_today_events(entity_id)
     header = _t(lang, "Vos reunions aujourd'hui :", "Your meetings today:")
     await _send(token, chat_id, header + "\n\n" + format_events_for_telegram(events))
 
 
-async def _handle_calendar_create(entity_id: str | None, data: dict,
+async def _handle_calendar_create(tenant_id, pool, data: dict,
                                    token: str, chat_id: str, lang: str = "fr"):
-    if not entity_id:
-        await _send(token, chat_id, _t(lang,
-            "Google Calendar pas encore connecte.\nConnectez-le sur microfaust.vercel.app dans la section Agenda.",
-            "Google Calendar not connected yet.\nConnect it at microfaust.vercel.app in the Agenda section.",
-        ))
-        return
     title = data.get("title") or data.get("summary")
     if title and data.get("start"):
         result = await create_event(
-            entity_id,
+            _uuid.UUID(str(tenant_id)), pool,
             summary=title,
             start=data["start"],
             end=data.get("end", data["start"]),
