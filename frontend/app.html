@@ -214,13 +214,17 @@ body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', san
         <div class="setup-step-num" id="step1-num">01</div>
         <div>
           <div class="setup-title">Connecter Telegram</div>
-          <div class="setup-desc">Créez un bot avec <a href="https://t.me/BotFather" target="_blank" style="color:var(--amber)">@BotFather</a> et collez le token ci-dessous.</div>
+          <div class="setup-desc">
+            <b>1.</b> Ouvrez <a href="https://t.me/BotFather" target="_blank" style="color:var(--amber)">@BotFather</a> sur Telegram et tapez <b>/newbot</b><br>
+            <b>2.</b> Donnez un nom — BotFather vous envoie un token. Collez-le ci-dessous et cliquez Enregistrer.<br>
+            <b>3.</b> Ouvrez votre nouveau bot sur Telegram et tapez <b>/start</b> pour l'activer.
+          </div>
         </div>
       </div>
       <div class="setup-field">
         <label>Bot Token</label>
         <input type="password" id="bot-token-input" placeholder="123456789:ABCDefgh..." autocomplete="off">
-        <small>Obtenez-le via /newbot sur <a href="https://t.me/BotFather" target="_blank">@BotFather</a>. Il ne sera jamais affiché après enregistrement.</small>
+        <small>Le token ne sera jamais affiché après enregistrement.</small>
       </div>
       <button class="btn-save" id="btn-save-bot" onclick="saveBotToken()">Enregistrer</button>
       <span class="save-msg" id="bot-msg"></span>
