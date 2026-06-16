@@ -43,7 +43,7 @@ async def auth_sync(request: Request):
     pool: asyncpg.Pool = request.app.state.pool
     async with pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT id, telegram_chat_id FROM tenants WHERE id = $1",
+            "SELECT id, telegram_chat_id, composio_entity_id FROM tenants WHERE id = $1",
             uuid.UUID(supabase_user_id),
         )
         if not existing:
@@ -52,12 +52,15 @@ async def auth_sync(request: Request):
                 uuid.UUID(supabase_user_id), email,
             )
             telegram_chat_id = None
+            composio_entity_id = None
         else:
-            telegram_chat_id = existing["telegram_chat_id"]
+            telegram_chat_id    = existing["telegram_chat_id"]
+            composio_entity_id  = existing["composio_entity_id"]
 
     return {
-        "tenant_id": supabase_user_id,
+        "tenant_id":          supabase_user_id,
         "onboarding_complete": telegram_chat_id is not None,
+        "calendar_connected":  composio_entity_id is not None,
     }
 
 

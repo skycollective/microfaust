@@ -367,11 +367,24 @@ async function syncWithBackend(session) {
         'Content-Type': 'application/json',
       },
     })
-    if (!res.ok) {
+    if (res.ok) {
+      const data = await res.json()
+      if (data.onboarding_complete) {
+        const stepNum = document.getElementById('step1-num')
+        stepNum.classList.add('done')
+        stepNum.textContent = '✓'
+        document.getElementById('bot-token-input').placeholder = 'Token enregistré — bot actif'
+        document.getElementById('btn-save-bot').textContent = 'Mettre à jour'
+      }
+      if (data.calendar_connected) {
+        const calNum = document.getElementById('step-cal-num')
+        calNum.classList.add('done')
+        calNum.textContent = '✓'
+      }
+    } else {
       console.warn('Backend sync returned', res.status)
     }
   } catch (e) {
-    // Non-fatal — backend may not be up yet during dev
     console.warn('Backend sync failed:', e.message)
   }
 }
