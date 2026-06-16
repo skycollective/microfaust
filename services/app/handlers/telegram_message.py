@@ -33,7 +33,7 @@ _INTENT_SYSTEM = (
     "1. Classify the intent\n"
     "2. Write a natural reply in {lang_label}\n\n"
     "Return ONLY valid JSON: "
-    '{"intent": "<intent>", "reply": "<reply>", "data": {}}\n\n'
+    '{{"intent": "<intent>", "reply": "<reply>", "data": {{}}}}\n\n'
     "Available intents:\n"
     "- capture_thought: user is noting something (idea, todo, reminder, watchlist item, anything to remember)\n"
     "- add_habit: user wants to track a recurring habit\n"
