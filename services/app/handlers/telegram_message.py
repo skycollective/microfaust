@@ -31,9 +31,8 @@ _INTENT_SYSTEM = (
     "You are an intent classifier for a personal assistant Telegram bot called MICROFAUST.\n\n"
     "The user sends a message. You must:\n"
     "1. Classify the intent\n"
-    "2. Write a natural reply in {lang_label}\n\n"
-    "Return ONLY valid JSON: "
-    '{{"intent": "<intent>", "reply": "<reply>", "data": {{}}}}\n\n'
+    "2. Write a natural reply in LANG_LABEL\n\n"
+    'Return ONLY valid JSON: {"intent": "<intent>", "reply": "<reply>", "data": {}}\n\n'
     "Available intents:\n"
     "- capture_thought: user is noting something (idea, todo, reminder, watchlist item, anything to remember)\n"
     "- add_habit: user wants to track a recurring habit\n"
@@ -52,7 +51,7 @@ _INTENT_SYSTEM = (
     "- For unknown: acknowledge naturally, ask if there's something specific they need\n"
     "- Never mention 'intent' or 'classification' in your reply\n"
     "- Keep replies short — user is on their phone\n"
-    "- Respond in {lang_label}"
+    "- Respond in LANG_LABEL"
 )
 
 
@@ -121,7 +120,7 @@ async def _route_with_claude(text: str, lang: str) -> dict:
         return {"intent": "unknown", "reply": _t(lang, "C'est note.", "Got it.")}
 
     lang_label = "French" if lang == "fr" else "English"
-    system = _INTENT_SYSTEM.format(lang_label=lang_label)
+    system = _INTENT_SYSTEM.replace("LANG_LABEL", lang_label)
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
