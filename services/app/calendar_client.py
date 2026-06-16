@@ -27,29 +27,34 @@ def _get_gcal_app():
 
 
 async def get_oauth_url(entity_id: str, redirect_url: str) -> str:
-    """Return Composio OAuth initiation URL for Google Calendar."""
-    import asyncio
-    from composio import ComposioToolSet
+    """Return Composio OAuth initiation URL for Google Calendar.
+    Calls Composio REST API directly — avoids SDK constructor 410 issue.
+    """
+    if not COMPOSIO_API_KEY:
+        raise ValueError("COMPOSIO_API_KEY not set")
 
-    def _initiate():
-        if not COMPOSIO_API_KEY:
-            raise ValueError("COMPOSIO_API_KEY not set")
-        toolset = ComposioToolSet(api_key=COMPOSIO_API_KEY)
-        entity = toolset.get_entity(entity_id)
-        app = _get_gcal_app()
-        logger.info("Composio initiate_connection app=%s entity=%s", app, entity_id)
-        request = entity.initiate_connection(
-            app=app,
-            redirect_url=redirect_url,
+    async with httpx.AsyncClient(timeout=15) as client:
+        # Composio v1 connected accounts endpoint
+        r = await client.post(
+            "https://backend.composio.dev/api/v1/connectedAccounts",
+            headers={
+                "x-api-key": COMPOSIO_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json={
+                "appName": "googlecalendar",
+                "entityId": entity_id,
+                "redirectUri": redirect_url,
+            },
         )
-        # redirectUrl vs redirect_url depends on SDK version
-        url = getattr(request, "redirectUrl", None) or getattr(request, "redirect_url", None)
+        logger.info("Composio connectedAccounts status=%s body=%s", r.status_code, r.text[:300])
+        if r.status_code not in (200, 201):
+            raise ValueError(f"Composio API error {r.status_code}: {r.text[:200]}")
+        data = r.json()
+        url = data.get("redirectUrl") or data.get("redirect_url") or data.get("connectionUrl")
         if not url:
-            raise ValueError(f"No redirect URL in response: {vars(request)}")
+            raise ValueError(f"No redirect URL in Composio response: {data}")
         return url
-
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _initiate)
 
 
 async def list_today_events(entity_id: str) -> list[dict]:

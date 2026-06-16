@@ -77,6 +77,21 @@ async def composio_debug(request: Request):
         result["toolset_ok"] = True
     except Exception as e:
         result["toolset_error"] = str(e)
+
+    # Test the REST API directly (what get_oauth_url now uses)
+    try:
+        import httpx as _httpx
+        r = await _httpx.AsyncClient(timeout=10).get(
+            "https://backend.composio.dev/api/v1/apps/googlecalendar",
+            headers={"x-api-key": os.environ.get("COMPOSIO_API_KEY", "")},
+        )
+        result["rest_api_status"] = r.status_code
+        if r.status_code == 200:
+            result["rest_api_ok"] = True
+        else:
+            result["rest_api_body"] = r.text[:200]
+    except Exception as e:
+        result["rest_api_error"] = str(e)
     return result
 
 
