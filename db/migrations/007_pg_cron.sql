@@ -27,7 +27,7 @@ BEGIN
         BETWEEN '07:05' AND '07:09'
   ON CONFLICT (idempotency_key) DO NOTHING;
 
-  -- EVENING BRIEFINGS — local time 18:00–18:04
+  -- EVENING BRIEFINGS — local time 20:30–20:34
   INSERT INTO job_queue (tenant_id, job_type, idempotency_key, scheduled_at)
   SELECT
     id,
@@ -38,7 +38,7 @@ BEGIN
   WHERE active = true
     AND telegram_chat_id IS NOT NULL
     AND to_char(NOW() AT TIME ZONE timezone, 'HH24:MI')
-        BETWEEN '18:00' AND '18:04'
+        BETWEEN '20:30' AND '20:34'
   ON CONFLICT (idempotency_key) DO NOTHING;
 
   -- WEEKLY REVIEW — Sunday local time 08:00–08:04
