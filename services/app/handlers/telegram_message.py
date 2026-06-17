@@ -34,11 +34,11 @@ _INTENT_SYSTEM = (
     "2. Write a natural reply in LANG_LABEL\n\n"
     'Return ONLY valid JSON: {"intent": "<intent>", "reply": "<reply>", "data": {}}\n\n'
     "Available intents:\n"
-    "- capture_thought: user is noting something (idea, todo, reminder, watchlist item, anything to remember)\n"
+    "- capture_thought: user is explicitly saving a note, idea, or reminder — set data.is_todo=true if user says 'todo', 'task', 'remind me', 'add to list'\n"
     "- add_habit: user wants to track a recurring habit\n"
     "- complete_habit: user says they finished a habit (done meditating, finished run, etc.)\n"
     "- show_agenda: user wants to see calendar or meetings — set data.timeframe to 'today', 'tomorrow', or 'week'\n"
-    "- show_thoughts: user wants to see their saved notes, todos, ideas, or memory\n"
+    "- show_thoughts: user wants to see their saved notes or ideas — set data.filter='todo' if user asks for todo/task list specifically\n"
     "- create_event: user wants to add a calendar event or meeting\n"
     "- invoke_council: user wants advice on a decision or multiple perspectives\n"
     "- language_switch_en: user wants to switch to English\n"
@@ -48,7 +48,8 @@ _INTENT_SYSTEM = (
     "Rules:\n"
     "- For create_event: include title, start, end in ISO 8601 format in 'data' if mentioned\n"
     "- For show_agenda: always set data.timeframe — default 'today', use 'tomorrow' or 'week' if user says so\n"
-    "- For capture_thought: confirm you saved it, briefly echo what you understood\n"
+    "- For capture_thought: confirm you saved it, briefly echo what you understood; set data.is_todo=true if explicit todo/task/reminder\n"
+    "- For invoke_council: classify IMMEDIATELY — never classify council context as capture_thought\n"
     "- For greetings: respond warmly and briefly\n"
     "- For unknown: acknowledge naturally, ask if there's something specific they need\n"
     "- Never mention 'intent' or 'classification' in your reply\n"
@@ -98,7 +99,7 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
     elif intent == "language_switch_fr":
         await _set_language(pool, tenant_id, "fr", token, chat_id)
     elif intent == "capture_thought":
-        await _capture_thought(pool, tenant_id, text, token, chat_id, reply)
+        await _capture_thought(pool, tenant_id, text, token, chat_id, reply, is_todo=data.get("is_todo", False))
     elif intent == "add_habit":
         await _add_habit_from_text(pool, tenant_id, text, token, chat_id, reply)
     elif intent == "complete_habit":
@@ -106,7 +107,7 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
     elif intent == "show_agenda":
         await _show_agenda(tenant_id, pool, token, chat_id, lang, data.get("timeframe", "today"))
     elif intent == "show_thoughts":
-        await _show_thoughts(pool, tenant_id, token, chat_id, lang)
+        await _show_thoughts(pool, tenant_id, token, chat_id, lang, todo_only=data.get("filter") == "todo")
     elif intent == "create_event":
         await _handle_calendar_create(tenant_id, pool, data, token, chat_id, lang)
     elif intent == "invoke_council":
@@ -170,13 +171,15 @@ async def _route_with_claude(text: str, lang: str) -> dict:
 
 # ── Intent handlers ───────────────────────────────────────────────────────────
 
-async def _capture_thought(pool, tenant_id, text: str, token: str, chat_id: str, reply: str):
+async def _capture_thought(pool, tenant_id, text: str, token: str, chat_id: str, reply: str,
+                           is_todo: bool = False):
+    tags = ["todo"] if is_todo else []
     try:
         async with pool.acquire() as conn:
             await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
             await conn.execute(
-                "INSERT INTO thoughts (tenant_id, content) VALUES ($1,$2)",
-                tenant_id, text,
+                "INSERT INTO thoughts (tenant_id, content, tags) VALUES ($1,$2,$3)",
+                tenant_id, text, tags,
             )
     except Exception as e:
         logger.error("capture_thought insert failed: %s", e)
@@ -276,7 +279,9 @@ async def _invoke_council(text: str, token: str, chat_id: str, lang: str,
         "- Format: [Advisor Name]: [1-2 sentence verdict. Direct. No hedging.]\n"
         "- End with one line: DECISION: [single recommendation, no 'it depends']\n"
         f"- No markdown. No asterisks. Respond in {lang_label}.\n"
-        "- Optimising for: freedom by design, financial resilience, compounding assets."
+        "- Optimising for: freedom by design, financial resilience, compounding assets.\n"
+        "- NEVER ask for clarification. Make reasonable assumptions and give the verdict immediately.\n"
+        "- If context is thin, state your assumption in one line then give the verdict."
     )
 
     try:
@@ -357,22 +362,32 @@ async def _show_agenda(tenant_id, pool, token: str, chat_id: str, lang: str = "f
     await _send(token, chat_id, header + "\n\n" + format_events_for_telegram(events))
 
 
-async def _show_thoughts(pool, tenant_id, token: str, chat_id: str, lang: str = "fr"):
+async def _show_thoughts(pool, tenant_id, token: str, chat_id: str, lang: str = "fr",
+                         todo_only: bool = False):
     try:
         async with pool.acquire() as conn:
             await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
-            rows = await conn.fetch(
-                "SELECT content, created_at FROM thoughts WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 10",
-                tenant_id,
-            )
+            if todo_only:
+                rows = await conn.fetch(
+                    "SELECT content FROM thoughts WHERE tenant_id=$1 AND 'todo'=ANY(tags) ORDER BY created_at DESC LIMIT 20",
+                    tenant_id,
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT content FROM thoughts WHERE tenant_id=$1 AND NOT ('todo'=ANY(coalesce(tags,'{}'))) ORDER BY created_at DESC LIMIT 10",
+                    tenant_id,
+                )
     except Exception as e:
         logger.error("show_thoughts failed: %s", e)
         rows = []
     if not rows:
-        await _send(token, chat_id, _t(lang, "Aucune note sauvegardee.", "No saved notes yet."))
+        if todo_only:
+            await _send(token, chat_id, _t(lang, "Aucune tache en cours.", "No tasks yet."))
+        else:
+            await _send(token, chat_id, _t(lang, "Aucune note sauvegardee.", "No saved notes yet."))
         return
     lines = [f"- {r['content']}" for r in rows]
-    header = _t(lang, "Vos dernières notes :", "Your recent notes:")
+    header = _t(lang, "Vos taches :" if todo_only else "Vos notes :", "Your tasks:" if todo_only else "Your notes:")
     await _send(token, chat_id, header + "\n\n" + "\n".join(lines))
 
 
