@@ -9,7 +9,7 @@ async def handle_cron_evening(pool: asyncpg.Pool, job: asyncpg.Record):
     async with pool.acquire() as conn:
         await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
         tenant = await conn.fetchrow(
-            "SELECT telegram_bot_token, telegram_chat_id FROM tenants WHERE id=$1", tenant_id
+            "SELECT telegram_bot_token, telegram_chat_id, language FROM tenants WHERE id=$1", tenant_id
         )
         if not tenant or not tenant["telegram_chat_id"]:
             return
@@ -32,16 +32,25 @@ async def handle_cron_evening(pool: asyncpg.Pool, job: asyncpg.Record):
 
     token   = tenant["telegram_bot_token"]
     chat_id = tenant["telegram_chat_id"]
-    mood    = checkin["value"] if checkin else "non enregistrée"
+    lang    = tenant["language"] or "fr"
+    mood    = checkin["value"] if checkin else ("not recorded" if lang == "en" else "non enregistree")
 
-    text = (
-        "🌙 Bilan de la journée\n\n"
-        f"✅ Habitudes : {habits_done}/{habits_total}\n"
-        f"📊 Humeur : {mood}\n\n"
-        "📝 Capture du jour\n\n"
-        "Vite — qu'est-ce que tu as accompli aujourd'hui ?\n"
-        'Réponds : "Fait [chose] avec/pour [qui]"'
-    )
+    if lang == "en":
+        text = (
+            "Evening review\n\n"
+            f"Habits : {habits_done}/{habits_total}\n"
+            f"Mood : {mood}\n\n"
+            "I'm grateful for...\n"
+            "Realisation : ..."
+        )
+    else:
+        text = (
+            "Bilan de la journee\n\n"
+            f"Habitudes : {habits_done}/{habits_total}\n"
+            f"Humeur : {mood}\n\n"
+            "Je suis reconnaissant(e) pour...\n"
+            "Prise de conscience : ..."
+        )
     await _send(token, chat_id, text)
 
     async with pool.acquire() as conn:
