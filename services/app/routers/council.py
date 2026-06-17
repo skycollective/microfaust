@@ -22,6 +22,13 @@ class ExpertIn(BaseModel):
     signature: str | None = None
     active: bool = True
 
+    def validated(self) -> "ExpertIn":
+        if len(self.name) > 100:
+            raise HTTPException(status_code=400, detail="name too long (max 100)")
+        if len(self.system_prompt) > 2000:
+            raise HTTPException(status_code=400, detail="system_prompt too long (max 2000)")
+        return self
+
 
 def _get_tenant(request: Request) -> str:
     tid = request.state.tenant_id
@@ -51,6 +58,7 @@ async def list_experts(request: Request):
 
 @router.post("", status_code=201)
 async def add_expert(body: ExpertIn, request: Request):
+    body.validated()
     tid = _get_tenant(request)
     pool: asyncpg.Pool = request.app.state.pool
     import json, re
@@ -71,6 +79,7 @@ async def add_expert(body: ExpertIn, request: Request):
 
 @router.put("/{expert_id}")
 async def update_expert(expert_id: str, body: ExpertIn, request: Request):
+    body.validated()
     tid = _get_tenant(request)
     pool: asyncpg.Pool = request.app.state.pool
     import json
