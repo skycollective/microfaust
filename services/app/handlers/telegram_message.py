@@ -40,7 +40,7 @@ _INTENT_SYSTEM = (
     "- show_agenda: user wants to see calendar or meetings — set data.timeframe to 'today', 'tomorrow', or 'week'\n"
     "- show_thoughts: user wants to see their saved notes or ideas — set data.filter='todo' if user asks for todo/task list specifically\n"
     "- create_event: user wants to add a calendar event or meeting\n"
-    "- invoke_council: user wants advice on a decision or multiple perspectives\n"
+    "- invoke_council: user wants advice on a decision or multiple perspectives — keywords 'conseil' or 'comité' strongly indicate this\n"
     "- language_switch_en: user wants to switch to English\n"
     "- language_switch_fr: user wants to switch to French\n"
     "- evening_checkin: user is responding to the evening review — message contains gratitude, realisation, or reflection on the day\n"
