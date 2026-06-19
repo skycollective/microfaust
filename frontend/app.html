@@ -290,14 +290,10 @@ input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,
         </div>
       </div>
       <div class="council-grid" id="council-list"></div>
-      <div class="council-add-form">
+      <div class="council-add-form" style="grid-template-columns:1fr">
         <div class="setup-field" style="margin-bottom:0">
           <label>Nom du conseiller</label>
-          <input type="text" id="council-name-input" placeholder="ex: Stratège" maxlength="60">
-        </div>
-        <div class="setup-field" style="margin-bottom:0">
-          <label>Rôle (court)</label>
-          <input type="text" id="council-role-input" placeholder="ex: Conséquences long terme" maxlength="80">
+          <input type="text" id="council-name-input" placeholder="ex: Stratège" maxlength="60" style="max-width:100%">
         </div>
         <textarea id="council-prompt-input" placeholder="Instructions pour ce conseiller — comment doit-il analyser une décision ? Quel angle unique défend-il ?"></textarea>
         <div style="grid-column:1/-1;display:flex;align-items:center;gap:12px">
@@ -762,7 +758,6 @@ function renderCouncil(members) {
 
 async function addCouncilMember() {
   const name   = document.getElementById('council-name-input').value.trim()
-  const role   = document.getElementById('council-role-input').value.trim()
   const prompt = document.getElementById('council-prompt-input').value.trim()
   const msg    = document.getElementById('council-msg')
   if (!name || !prompt) {
@@ -786,7 +781,6 @@ async function addCouncilMember() {
     })
     if (res.ok) {
       document.getElementById('council-name-input').value = ''
-      document.getElementById('council-role-input').value = ''
       document.getElementById('council-prompt-input').value = ''
       msg.textContent = '✓ Conseiller ajouté'
       msg.className = 'save-msg ok'
