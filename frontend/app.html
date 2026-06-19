@@ -149,6 +149,8 @@ input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,
 @keyframes pulse { 0%,100%{opacity:.4}50%{opacity:1} }
 @keyframes fadeUp { from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none} }
 .fade-up { animation: fadeUp .5s forwards; }
+.value-chip { background: none; border: 0.5px solid rgba(200,144,42,.3); color: var(--ash); font-family: 'DM Sans', sans-serif; font-size: 12px; padding: 5px 12px; cursor: pointer; transition: all .2s; }
+.value-chip:hover { border-color: var(--amber); color: var(--vellum); background: rgba(200,144,42,.08); }
 </style>
 </head>
 <body>
@@ -276,6 +278,21 @@ input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,
           <input type="text" id="value-desc-input" placeholder="Ce que ça signifie pour vous" maxlength="160">
         </div>
         <button class="btn-save" onclick="addValue()" style="margin-bottom:0">Ajouter</button>
+      </div>
+      <div style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px">
+        <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ash);align-self:center;margin-right:4px">Suggestions —</span>
+        <button class="value-chip" onclick="prefillValue('Liberté')">Liberté</button>
+        <button class="value-chip" onclick="prefillValue('Cohérence')">Cohérence</button>
+        <button class="value-chip" onclick="prefillValue('Bienveillance')">Bienveillance</button>
+        <button class="value-chip" onclick="prefillValue('Vérité')">Vérité</button>
+        <button class="value-chip" onclick="prefillValue('Générosité')">Générosité</button>
+        <button class="value-chip" onclick="prefillValue('Curiosité')">Curiosité</button>
+        <button class="value-chip" onclick="prefillValue('Apprentissage')">Apprentissage</button>
+        <button class="value-chip" onclick="prefillValue('Impact')">Impact</button>
+        <button class="value-chip" onclick="prefillValue('Famille')">Famille</button>
+        <button class="value-chip" onclick="prefillValue('Souveraineté')">Souveraineté</button>
+        <button class="value-chip" onclick="prefillValue('Excellence')">Excellence</button>
+        <button class="value-chip" onclick="prefillValue('Créativité')">Créativité</button>
       </div>
       <span class="save-msg" id="values-msg"></span>
     </div>
@@ -656,6 +673,11 @@ function renderValuesList(values) {
       <button onclick="deleteValue('${v.id}')" style="background:none;border:none;color:var(--ash);cursor:pointer;font-size:18px;padding:0 4px;line-height:1" title="Supprimer">×</button>
     </div>
   `).join('')
+}
+
+function prefillValue(name) {
+  document.getElementById('value-name-input').value = name
+  document.getElementById('value-name-input').focus()
 }
 
 async function addValue() {
