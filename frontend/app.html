@@ -693,7 +693,7 @@ function renderValuesList(values) {
   const el = document.getElementById('values-list')
   if (!values.length) { el.innerHTML = ''; return }
   el.innerHTML = values.map(v => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:0.5px solid rgba(245,240,232,.06)">
+    <div class="value-row" style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:0.5px solid rgba(245,240,232,.06)">
       <div>
         <span style="font-size:14px;color:var(--vellum)">${v.name}</span>
         ${v.description ? `<span style="font-size:12px;color:var(--ash);margin-left:10px">${v.description}</span>` : ''}
@@ -713,6 +713,12 @@ async function addValue() {
   const desc = document.getElementById('value-desc-input').value.trim()
   const msg  = document.getElementById('values-msg')
   if (!name) return
+  if (document.querySelectorAll('#values-list .value-row').length >= 5) {
+    msg.textContent = '5 valeurs maximum — supprimez-en une pour en ajouter une nouvelle.'
+    msg.className = 'save-msg err'
+    msg.style.display = 'inline'
+    return
+  }
 
   msg.textContent = 'Ajout...'
   msg.className = 'save-msg'
