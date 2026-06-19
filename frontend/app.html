@@ -463,7 +463,8 @@ async function loadDashboard(session) {
 
     await loadCouncil(session)
 
-    document.getElementById('dashboard-section').style.display = 'block'
+    // dashboard hidden for now
+    // document.getElementById('dashboard-section').style.display = 'block'
   } catch (e) {
     console.warn('Dashboard load error:', e.message)
   }
