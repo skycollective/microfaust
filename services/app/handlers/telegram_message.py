@@ -116,6 +116,7 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
         await _evening_checkin_response(pool, tenant_id, text, token, chat_id, lang)
     elif intent == "invoke_council":
         await _invoke_council(text, token, chat_id, lang, pool=pool, tenant_id=tenant_id)
+        await _mark_responded(pool, tenant_id)
     else:
         await _send(token, chat_id, reply)
         await _mark_responded(pool, tenant_id)
@@ -230,13 +231,13 @@ async def _log_habit_completion(pool, tenant_id, token: str, chat_id: str, reply
 
 _ETHICS_GUARDIAN = (
     "Responsable de l'Éthique",
-    "Je suis le gardien des valeurs que vous avez définies. "
-    "Pour chaque décision, je dois : "
-    "(1) vérifier explicitement si elle est alignée ou en conflit avec vos valeurs fondamentales déclarées, "
-    "(2) signaler tout angle mort éthique ou conséquence sur les personnes impliquées, "
-    "(3) identifier si une pression externe, une urgence artificielle ou une rationalisation masque un compromis de valeurs, "
-    "(4) conclure par un verdict clair — ALIGNÉ, CONFLIT PARTIEL ou CONFLIT DIRECT — avec une phrase d'explication. "
-    "Je ne juge pas la décision en elle-même : je révèle l'écart entre ce que vous faites et ce que vous avez déclaré vouloir être."
+    "I am the guardian of the user's declared values. For every decision I must: "
+    "(1) explicitly check whether it is aligned or in conflict with their stated core values, "
+    "(2) flag ethical blind spots or consequences for people involved, "
+    "(3) identify whether external pressure, artificial urgency, or rationalisation is masking a values compromise, "
+    "(4) conclude with a clear verdict — ALIGNED, PARTIAL CONFLICT, or DIRECT CONFLICT — with one explanatory sentence. "
+    "I do not judge the decision itself: I reveal the gap between what the user is doing and what they declared they want to be. "
+    "Respond in the same language as the rest of the council."
 )
 
 _DEFAULT_COUNCIL = [
@@ -261,7 +262,7 @@ async def _invoke_council(text: str, token: str, chat_id: str, lang: str,
                           pool: asyncpg.Pool | None = None, tenant_id=None):
     if not ANTHROPIC_API_KEY:
         await _send(token, chat_id, _t(lang,
-            "Le conseil n'est pas disponible pour l'instant.",
+            "Le comité n'est pas disponible pour l'instant.",
             "The council is unavailable right now."))
         return
 
@@ -325,7 +326,7 @@ async def _invoke_council(text: str, token: str, chat_id: str, lang: str,
     except Exception as e:
         logger.error("Council invocation failed: %s", e)
     await _send(token, chat_id, _t(lang,
-        "Le conseil n'est pas disponible pour l'instant.",
+        "Le comité n'est pas disponible pour l'instant.",
         "The council is unavailable right now."))
 
 
@@ -333,8 +334,8 @@ async def _invoke_council(text: str, token: str, chat_id: str, lang: str,
 
 async def _forget_all_confirm(token, chat_id, lang="fr"):
     await _send(token, chat_id, _t(lang,
-        "Cette action supprime toutes vos donnees definitivamente.\n"
-        "Repondez CONFIRM DELETE pour continuer.",
+        "Cette action supprime toutes vos données définitivement.\n"
+        "Répondez CONFIRM DELETE pour continuer.",
         "This will permanently delete all your data.\n"
         "Reply CONFIRM DELETE to proceed.",
     ))
@@ -348,7 +349,7 @@ async def _execute_forget_all(pool, tenant_id, token, chat_id, lang="fr"):
         await conn.execute("DELETE FROM habits WHERE tenant_id=$1", tenant_id)
         await conn.execute("DELETE FROM briefings WHERE tenant_id=$1", tenant_id)
     await _send(token, chat_id, _t(lang,
-        "Toutes vos donnees ont ete supprimees.",
+        "Toutes vos données ont été supprimées.",
         "All your data has been permanently deleted.",
     ))
 
@@ -362,7 +363,7 @@ async def _forget_topic(pool, tenant_id, topic, token, chat_id, lang="fr"):
         )
     count = int(result.split()[-1]) if result else 0
     await _send(token, chat_id, _t(lang,
-        f"{count} souvenir(s) sur '{topic}' supprime(s).",
+        f"{count} souvenir(s) sur '{topic}' supprimé(s).",
         f"{count} memory item(s) about '{topic}' deleted.",
     ))
 
@@ -442,9 +443,9 @@ async def _show_agenda(tenant_id, pool, token: str, chat_id: str, lang: str = "f
                        timeframe: str = "today"):
     events = await list_events_range(_uuid.UUID(str(tenant_id)), pool, timeframe)
     headers = {
-        "today":    _t(lang, "Vos reunions aujourd'hui :", "Your meetings today:"),
-        "tomorrow": _t(lang, "Vos reunions demain :", "Your meetings tomorrow:"),
-        "week":     _t(lang, "Vos reunions cette semaine :", "Your meetings this week:"),
+        "today":    _t(lang, "Vos réunions aujourd'hui :", "Your meetings today:"),
+        "tomorrow": _t(lang, "Vos réunions demain :", "Your meetings tomorrow:"),
+        "week":     _t(lang, "Vos réunions cette semaine :", "Your meetings this week:"),
     }
     header = headers.get(timeframe, headers["today"])
     await _send(token, chat_id, header + "\n\n" + format_events_for_telegram(events))
@@ -470,9 +471,9 @@ async def _show_thoughts(pool, tenant_id, token: str, chat_id: str, lang: str = 
         rows = []
     if not rows:
         if todo_only:
-            await _send(token, chat_id, _t(lang, "Aucune tache en cours.", "No tasks yet."))
+            await _send(token, chat_id, _t(lang, "Aucune tâche en cours.", "No tasks yet."))
         else:
-            await _send(token, chat_id, _t(lang, "Aucune note sauvegardee.", "No saved notes yet."))
+            await _send(token, chat_id, _t(lang, "Aucune note sauvegardée.", "No saved notes yet."))
         return
     lines = [f"- {r['content']}" for r in rows]
     header = _t(lang, "Vos taches :" if todo_only else "Vos notes :", "Your tasks:" if todo_only else "Your notes:")
@@ -492,12 +493,12 @@ async def _handle_calendar_create(tenant_id, pool, data: dict,
         )
         if result:
             await _send(token, chat_id, _t(lang,
-                f"Evenement cree : {title}",
+                f"Événement créé : {title}",
                 f"Event created: {title}",
             ))
             return
     await _send(token, chat_id, _t(lang,
-        "Pour creer un evenement :\nEx: Reunion client demain a 14h pendant 1h",
+        "Pour créer un événement :\nEx: Réunion client demain à 14h pendant 1h",
         "To create an event:\nEx: Client meeting tomorrow at 2pm for 1 hour",
     ))
 
@@ -510,7 +511,7 @@ async def _set_language(pool, tenant_id, lang: str, token: str, chat_id: str):
     if lang == "en":
         await _send(token, chat_id, "Switched to English. I'll reply in English from now on.")
     else:
-        await _send(token, chat_id, "Passe en francais. Je repondrai en francais desormais.")
+        await _send(token, chat_id, "Passé en français. Je répondrai en français désormais.")
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
