@@ -43,7 +43,7 @@ body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', san
 .auth-divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 0.5px; background: rgba(245,240,232,.1); }
 .auth-divider span { position: relative; background: var(--smoke2); padding: 0 12px; font-size: 11px; letter-spacing: .15em; text-transform: uppercase; color: var(--ash); }
 .auth-field { margin-bottom: 16px; }
-.auth-field label { display: block; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash); margin-bottom: 6px; }
+.auth-field label { display: block; font-size: 12px; font-weight: 400; letter-spacing: .1em; text-transform: uppercase; color: var(--ash); margin-bottom: 6px; }
 .auth-field input {
   width: 100%; padding: 12px 14px; background: rgba(255,255,255,.04);
   border: 0.5px solid rgba(245,240,232,.28); color: var(--vellum);
@@ -84,7 +84,7 @@ body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', san
 .app-greeting { margin-bottom: 48px; }
 .app-greeting h1 { font-family: 'Cormorant Garamond', serif; font-size: clamp(28px, 4vw, 42px); font-weight: 400; line-height: 1.2; }
 .app-greeting h1 em { color: var(--gold); font-style: italic; }
-.app-greeting p { color: var(--ash); font-size: 14px; margin-top: 8px; }
+.app-greeting p { color: var(--ash); font-size: 14px; font-weight: 400; margin-top: 8px; }
 
 /* Setup steps */
 .setup-card { background: var(--smoke2); border: 0.5px solid rgba(200,144,42,.2); padding: 36px; margin-bottom: 24px; }
@@ -92,9 +92,9 @@ body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', san
 .setup-step-num { font-family: 'Cinzel', serif; font-size: 32px; color: rgba(200,144,42,.3); line-height: 1; min-width: 40px; }
 .setup-step-num.done { color: var(--ok); font-size: 24px; }
 .setup-title { font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: .06em; color: var(--gold); margin-bottom: 4px; }
-.setup-desc { font-size: 13px; color: var(--ash); line-height: 1.6; }
+.setup-desc { font-size: 14px; font-weight: 400; color: var(--ash); line-height: 1.6; }
 .setup-field { margin-bottom: 16px; }
-.setup-field label { display: block; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ash); margin-bottom: 6px; }
+.setup-field label { display: block; font-size: 12px; font-weight: 400; letter-spacing: .1em; text-transform: uppercase; color: var(--ash); margin-bottom: 6px; }
 .setup-field input {
   width: 100%; max-width: 480px; padding: 10px 14px;
   background: rgba(255,255,255,.04); border: 0.5px solid rgba(245,240,232,.25);
@@ -102,7 +102,9 @@ body { background: var(--ink); color: var(--vellum); font-family: 'DM Sans', san
   outline: none; transition: border-color .2s;
 }
 .setup-field input:focus { border-color: var(--amber); }
-.setup-field small { display: block; margin-top: 6px; font-size: 12px; color: var(--ash); }
+.setup-field small { display: block; margin-top: 6px; font-size: 12px; font-weight: 400; color: var(--ash); }
+input::placeholder, textarea::placeholder { color: rgba(176,164,148,.5); font-weight: 300; }
+input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,.35); }
 .setup-field small a { color: var(--amber); text-decoration: none; }
 .btn-save { padding: 10px 28px; background: var(--amber); color: var(--ink); border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; transition: background .2s; }
 .btn-save:hover { background: var(--gold); }
