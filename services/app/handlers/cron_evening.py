@@ -33,7 +33,7 @@ async def handle_cron_evening(pool: asyncpg.Pool, job: asyncpg.Record):
     token   = tenant["telegram_bot_token"]
     chat_id = tenant["telegram_chat_id"]
     lang    = tenant["language"] or "fr"
-    mood    = checkin["value"] if checkin else ("not recorded" if lang == "en" else "non enregistree")
+    mood    = checkin["value"] if checkin else ("not recorded" if lang == "en" else "non enregistrée")
 
     if lang == "en":
         text = (
@@ -44,8 +44,8 @@ async def handle_cron_evening(pool: asyncpg.Pool, job: asyncpg.Record):
     else:
         text = (
             f"Habitudes : {habits_done}/{habits_total}  |  Humeur : {mood}\n\n"
-            "🌙 C'est le moment de prendre un instant pour revenir sur votre journee.\n"
-            "De quoi etes-vous reconnaissant(e) ? Qu'avez-vous appris aujourd'hui ?"
+            "🌙 C'est le moment de prendre un instant pour revenir sur votre journée.\n"
+            "De quoi êtes-vous reconnaissant(e) ? Qu'avez-vous appris aujourd'hui ?"
         )
     await _send(token, chat_id, text)
 
