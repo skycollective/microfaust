@@ -112,6 +112,15 @@ input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,
 .save-msg { margin-left: 12px; font-size: 13px; display: none; }
 .save-msg.ok { color: var(--ok); display: inline; }
 .save-msg.err { color: var(--error); display: inline; }
+.setup-card.connected { border-color: rgba(39,174,96,.35); }
+.setup-card.connected .setup-step-num { color: var(--ok); }
+.connected-status { display: none; align-items: center; gap: 10px; margin-top: 4px; padding: 10px 14px; background: rgba(39,174,96,.07); border: 0.5px solid rgba(39,174,96,.25); }
+.connected-status.visible { display: flex; }
+.connected-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex-shrink: 0; box-shadow: 0 0 6px rgba(39,174,96,.6); }
+.connected-label { font-size: 13px; font-weight: 400; color: var(--ok); }
+.connected-label span { color: var(--ash); font-weight: 300; margin-left: 6px; }
+.setup-card-fields { }
+.setup-card-fields.hidden { display: none; }
 
 /* Council member cards */
 .council-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 20px; }
@@ -236,13 +245,19 @@ input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,
           </div>
         </div>
       </div>
-      <div class="setup-field">
-        <label>Bot Token</label>
-        <input type="password" id="bot-token-input" placeholder="123456789:ABCDefgh..." autocomplete="off">
-        <small>Le token ne sera jamais affiché après enregistrement.</small>
+      <div class="connected-status" id="bot-connected-status">
+        <div class="connected-dot"></div>
+        <div class="connected-label">Telegram connecté<span>— votre bot est actif et à l'écoute</span></div>
       </div>
-      <button class="btn-save" id="btn-save-bot" onclick="saveBotToken()">Enregistrer</button>
-      <span class="save-msg" id="bot-msg"></span>
+      <div class="setup-card-fields" id="bot-fields">
+        <div class="setup-field">
+          <label>Bot Token</label>
+          <input type="password" id="bot-token-input" placeholder="123456789:ABCDefgh..." autocomplete="off">
+          <small>Le token ne sera jamais affiché après enregistrement.</small>
+        </div>
+        <button class="btn-save" id="btn-save-bot" onclick="saveBotToken()">Enregistrer</button>
+        <span class="save-msg" id="bot-msg"></span>
+      </div>
     </div>
 
     <!-- ── Setup step 2: Google Calendar ─────────────────── -->
@@ -254,8 +269,14 @@ input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,
           <div class="setup-desc">Recevez vos reunions dans le briefing du matin et tapez /agenda sur Telegram.</div>
         </div>
       </div>
-      <button class="btn-save" id="btn-connect-calendar" onclick="connectCalendar()">Connecter Google Calendar</button>
-      <span class="save-msg" id="cal-msg"></span>
+      <div class="connected-status" id="cal-connected-status">
+        <div class="connected-dot"></div>
+        <div class="connected-label">Google Calendar connecté<span>— agenda synchronisé</span></div>
+      </div>
+      <div class="setup-card-fields" id="cal-fields">
+        <button class="btn-save" id="btn-connect-calendar" onclick="connectCalendar()">Connecter Google Calendar</button>
+        <span class="save-msg" id="cal-msg"></span>
+      </div>
     </div>
 
     <!-- ── Setup step 3: Values ────────────────────────── -->
@@ -426,13 +447,17 @@ async function syncWithBackend(session) {
         const stepNum = document.getElementById('step1-num')
         stepNum.classList.add('done')
         stepNum.textContent = '✓'
-        document.getElementById('bot-token-input').placeholder = 'Token enregistré — bot actif'
-        document.getElementById('btn-save-bot').textContent = 'Mettre à jour'
+        document.getElementById('card-bot').classList.add('connected')
+        document.getElementById('bot-connected-status').classList.add('visible')
+        document.getElementById('bot-fields').classList.add('hidden')
       }
       if (data.calendar_connected) {
         const calNum = document.getElementById('step-cal-num')
         calNum.classList.add('done')
         calNum.textContent = '✓'
+        document.getElementById('card-calendar').classList.add('connected')
+        document.getElementById('cal-connected-status').classList.add('visible')
+        document.getElementById('cal-fields').classList.add('hidden')
       }
       if (data.council_configured) {
         const cNum = document.getElementById('step-council-num')
@@ -601,6 +626,9 @@ async function connectCalendar() {
       msg.className = 'save-msg ok'
       document.getElementById('step-cal-num').classList.add('done')
       document.getElementById('step-cal-num').textContent = '✓'
+      document.getElementById('card-calendar').classList.add('connected')
+      document.getElementById('cal-connected-status').classList.add('visible')
+      document.getElementById('cal-fields').classList.add('hidden')
     } else {
       const err = await res.json().catch(() => ({}))
       msg.textContent = err.detail || 'Erreur — reessayez.'
@@ -639,11 +667,11 @@ async function saveBotToken() {
     })
 
     if (res.ok) {
-      msg.textContent = '✓ Bot connecté ! Ouvrez Telegram et tapez /start'
-      msg.className = 'save-msg ok'
-      document.getElementById('bot-token-input').value = ''
       document.getElementById('step1-num').classList.add('done')
       document.getElementById('step1-num').textContent = '✓'
+      document.getElementById('card-bot').classList.add('connected')
+      document.getElementById('bot-connected-status').classList.add('visible')
+      document.getElementById('bot-fields').classList.add('hidden')
     } else {
       const err = await res.json().catch(() => ({}))
       msg.textContent = err.detail || 'Erreur — vérifiez le token.'
