@@ -43,6 +43,7 @@ _INTENT_SYSTEM = (
     "- invoke_council: user wants advice on a decision or multiple perspectives\n"
     "- language_switch_en: user wants to switch to English\n"
     "- language_switch_fr: user wants to switch to French\n"
+    "- evening_checkin: user is responding to the evening review — message contains gratitude, realisation, or reflection on the day\n"
     "- greeting: simple greeting with no actionable content\n"
     "- unknown: none of the above fits\n\n"
     "Rules:\n"
@@ -50,6 +51,7 @@ _INTENT_SYSTEM = (
     "- For show_agenda: always set data.timeframe — default 'today', use 'tomorrow' or 'week' if user says so\n"
     "- For capture_thought: confirm you saved it, briefly echo what you understood; set data.is_todo=true if explicit todo/task/reminder\n"
     "- For invoke_council: classify IMMEDIATELY — never classify council context as capture_thought\n"
+    "- For evening_checkin: reply should be empty string '' — the bot generates its own closing\n"
     "- For greetings: respond warmly and briefly\n"
     "- For unknown: acknowledge naturally, ask if there's something specific they need\n"
     "- Never mention 'intent' or 'classification' in your reply\n"
@@ -110,6 +112,8 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
         await _show_thoughts(pool, tenant_id, token, chat_id, lang, todo_only=data.get("filter") == "todo")
     elif intent == "create_event":
         await _handle_calendar_create(tenant_id, pool, data, token, chat_id, lang)
+    elif intent == "evening_checkin":
+        await _evening_checkin_response(pool, tenant_id, text, token, chat_id, lang)
     elif intent == "invoke_council":
         await _invoke_council(text, token, chat_id, lang, pool=pool, tenant_id=tenant_id)
     else:
@@ -346,6 +350,75 @@ async def _forget_topic(pool, tenant_id, topic, token, chat_id, lang="fr"):
         f"{count} souvenir(s) sur '{topic}' supprime(s).",
         f"{count} memory item(s) about '{topic}' deleted.",
     ))
+
+
+# ── Evening check-in ──────────────────────────────────────────────────────────
+
+_EVENING_REFLECTION_SYSTEM = (
+    "You are a wise evening companion. The user has just shared their evening reflection.\n\n"
+    "Write ONE closing message in the user's language. Total length: 120-220 characters.\n\n"
+    "Structure:\n"
+    "1. ACKNOWLEDGEMENT: one short sentence reflecting the emotional tone or theme of the day. Do not repeat the journal entries.\n"
+    "2. TRANSITION: choose one of: 'A thought for the evening:', 'As night falls:', 'Before you rest:', "
+    "'Tonight\\'s image:', 'A small wisdom:'\n"
+    "3. WISDOM: one metaphor, image, or observation. Inspired by nature, seasons, rivers, stars, gardens, "
+    "craftsmanship, poetry, myths, or contemplative traditions. Should subtly resonate with the user's realisation.\n\n"
+    "Constraints:\n"
+    "- Do not give advice\n"
+    "- Do not ask questions\n"
+    "- Do not analyze\n"
+    "- Do not sound like a coach, therapist, productivity app, or fortune cookie\n"
+    "- Do not quote famous people\n"
+    "- Avoid clichés\n"
+    "- Leave space for contemplation\n"
+    "- Sound simple, timeless, and quietly poetic\n\n"
+    "Example:\n"
+    "You found gratitude in learning, clarity, and rest today.\n"
+    "A thought for the evening:\n"
+    "A seed does not grow faster by being planted in seven gardens.\n\n"
+    "Return only the final message."
+)
+
+
+async def _evening_checkin_response(pool, tenant_id, text: str, token: str, chat_id: str, lang: str):
+    # Save the reflection as a thought tagged evening_checkin
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            await conn.execute(
+                "INSERT INTO thoughts (tenant_id, content, tags) VALUES ($1,$2,$3)",
+                tenant_id, text, ["evening_checkin"],
+            )
+    except Exception as e:
+        logger.error("evening_checkin save failed: %s", e)
+
+    # Generate poetic closing with Claude
+    closing = None
+    if ANTHROPIC_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                r = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": "claude-haiku-4-5-20251001",
+                        "max_tokens": 200,
+                        "system": _EVENING_REFLECTION_SYSTEM,
+                        "messages": [{"role": "user", "content": text}],
+                    },
+                )
+            if r.status_code == 200:
+                closing = r.json()["content"][0]["text"].strip()
+        except Exception as e:
+            logger.error("Evening reflection generation failed: %s", e)
+
+    if closing:
+        await _send(token, chat_id, closing)
+    await _mark_responded(pool, tenant_id)
 
 
 # ── Calendar ──────────────────────────────────────────────────────────────────
