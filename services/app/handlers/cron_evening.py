@@ -37,19 +37,15 @@ async def handle_cron_evening(pool: asyncpg.Pool, job: asyncpg.Record):
 
     if lang == "en":
         text = (
-            "Evening review\n\n"
-            f"Habits : {habits_done}/{habits_total}\n"
-            f"Mood : {mood}\n\n"
-            "I'm grateful for...\n"
-            "Realisation : ..."
+            f"Habits : {habits_done}/{habits_total}  |  Mood : {mood}\n\n"
+            "🌙 Now is the moment to reflect on your day.\n"
+            "What are you grateful for? What did you learn today?"
         )
     else:
         text = (
-            "Bilan de la journee\n\n"
-            f"Habitudes : {habits_done}/{habits_total}\n"
-            f"Humeur : {mood}\n\n"
-            "Je suis reconnaissant(e) pour...\n"
-            "Prise de conscience : ..."
+            f"Habitudes : {habits_done}/{habits_total}  |  Humeur : {mood}\n\n"
+            "🌙 C'est le moment de prendre un instant pour revenir sur votre journee.\n"
+            "De quoi etes-vous reconnaissant(e) ? Qu'avez-vous appris aujourd'hui ?"
         )
     await _send(token, chat_id, text)
 
