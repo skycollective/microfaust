@@ -256,10 +256,34 @@ input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,
       <span class="save-msg" id="cal-msg"></span>
     </div>
 
-    <!-- ── Setup step 3: Council ─────────────────────── -->
+    <!-- ── Setup step 3: Values ────────────────────────── -->
+    <div class="setup-card" id="card-values">
+      <div class="setup-card-header">
+        <div class="setup-step-num" id="step2-num">03</div>
+        <div>
+          <div class="setup-title">Vos valeurs</div>
+          <div class="setup-desc">Définissez ce qui vous guide. Ces valeurs ancreront chaque réponse de MicroFaust.</div>
+        </div>
+      </div>
+      <div id="values-list" style="margin-bottom:16px"></div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="setup-field" style="margin-bottom:0;flex:1;min-width:200px">
+          <label>Nouvelle valeur</label>
+          <input type="text" id="value-name-input" placeholder="ex: Impact authentique" maxlength="60">
+        </div>
+        <div class="setup-field" style="margin-bottom:0;flex:2;min-width:200px">
+          <label>Description (optionnel)</label>
+          <input type="text" id="value-desc-input" placeholder="Ce que ça signifie pour vous" maxlength="160">
+        </div>
+        <button class="btn-save" onclick="addValue()" style="margin-bottom:0">Ajouter</button>
+      </div>
+      <span class="save-msg" id="values-msg"></span>
+    </div>
+
+    <!-- ── Setup step 4: Council ─────────────────────── -->
     <div class="setup-card" id="card-council">
       <div class="setup-card-header">
-        <div class="setup-step-num" id="step-council-num">03</div>
+        <div class="setup-step-num" id="step-council-num">04</div>
         <div>
           <div class="setup-title">Votre Conseil</div>
           <div class="setup-desc">Le Comité d'Experts incarne vos compétences manquantes, vos angles morts et les potentiels que vous n'avez pas encore pleinement développés.</div>
@@ -281,30 +305,6 @@ input:focus::placeholder, textarea:focus::placeholder { color: rgba(176,164,148,
           <span class="save-msg" id="council-msg"></span>
         </div>
       </div>
-    </div>
-
-    <!-- ── Setup step 4: Values ────────────────────────── -->
-    <div class="setup-card" id="card-values">
-      <div class="setup-card-header">
-        <div class="setup-step-num" id="step2-num">04</div>
-        <div>
-          <div class="setup-title">Vos valeurs</div>
-          <div class="setup-desc">Définissez ce qui vous guide. Ces valeurs ancreront chaque réponse de MicroFaust.</div>
-        </div>
-      </div>
-      <div id="values-list" style="margin-bottom:16px"></div>
-      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-        <div class="setup-field" style="margin-bottom:0;flex:1;min-width:200px">
-          <label>Nouvelle valeur</label>
-          <input type="text" id="value-name-input" placeholder="ex: Impact authentique" maxlength="60">
-        </div>
-        <div class="setup-field" style="margin-bottom:0;flex:2;min-width:200px">
-          <label>Description (optionnel)</label>
-          <input type="text" id="value-desc-input" placeholder="Ce que ça signifie pour vous" maxlength="160">
-        </div>
-        <button class="btn-save" onclick="addValue()" style="margin-bottom:0">Ajouter</button>
-      </div>
-      <span class="save-msg" id="values-msg"></span>
     </div>
 
     <!-- ── Dashboard (shown when setup is done) ─────────── -->
