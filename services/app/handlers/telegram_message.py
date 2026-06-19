@@ -34,7 +34,13 @@ _INTENT_SYSTEM = (
     "2. Write a natural reply in LANG_LABEL\n\n"
     'Return ONLY valid JSON: {"intent": "<intent>", "reply": "<reply>", "data": {}}\n\n'
     "Available intents:\n"
-    "- capture_thought: user is explicitly saving a note, idea, or reminder — set data.is_todo=true if user says 'todo', 'task', 'remind me', 'add to list'\n"
+    "- capture_thought: user is saving a note, idea, reflection, or context\n"
+    "- capture_todo: user wants to add a task or reminder to their todo list.\n"
+    "  TRIGGERS — any of: 'add todo', 'add to todo', 'add to my list', 'ajoute', 'ajouter', 'à faire', 'à ma liste',\n"
+    "  'remind me', 'rappelle-moi', 'don't forget', 'n'oublie pas', or a message that is a clear actionable task.\n"
+    "  Set data.content = the clean task only, stripped of any 'add todo / add to todo / ajoute' prefix.\n"
+    "  Example: 'Add deposit Patrick check to todo' → data.content = 'Deposit Patrick check'\n"
+    "  Example: 'Ajoute appeler le médecin à ma liste' → data.content = 'Appeler le médecin'\n"
     "- add_habit: user wants to track a recurring habit\n"
     "- complete_habit: user says they finished a habit (done meditating, finished run, etc.)\n"
     "- show_agenda: user wants to see calendar or meetings — set data.timeframe to 'today', 'tomorrow', or 'week'\n"
@@ -49,7 +55,8 @@ _INTENT_SYSTEM = (
     "Rules:\n"
     "- For create_event: include title, start, end in ISO 8601 format in 'data' if mentioned\n"
     "- For show_agenda: always set data.timeframe — default 'today', use 'tomorrow' or 'week' if user says so\n"
-    "- For capture_thought: confirm you saved it, briefly echo what you understood; set data.is_todo=true if explicit todo/task/reminder\n"
+    "- For capture_thought: confirm you saved it, briefly echo what you understood\n"
+    "- For capture_todo: confirm the clean task was added; echo only the task name, not the full sentence\n"
     "- For invoke_council: classify IMMEDIATELY — never classify council context as capture_thought\n"
     "- For evening_checkin: reply should be empty string '' — the bot generates its own closing\n"
     "- For greetings: respond warmly and briefly\n"
@@ -100,8 +107,11 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
         await _set_language(pool, tenant_id, "en", token, chat_id)
     elif intent == "language_switch_fr":
         await _set_language(pool, tenant_id, "fr", token, chat_id)
+    elif intent == "capture_todo":
+        content = data.get("content") or text
+        await _capture_thought(pool, tenant_id, content, token, chat_id, reply, is_todo=True)
     elif intent == "capture_thought":
-        await _capture_thought(pool, tenant_id, text, token, chat_id, reply, is_todo=data.get("is_todo", False))
+        await _capture_thought(pool, tenant_id, text, token, chat_id, reply, is_todo=False)
     elif intent == "add_habit":
         await _add_habit_from_text(pool, tenant_id, text, token, chat_id, reply)
     elif intent == "complete_habit":
@@ -463,7 +473,10 @@ async def _show_thoughts(pool, tenant_id, token: str, chat_id: str, lang: str = 
                 )
             else:
                 rows = await conn.fetch(
-                    "SELECT content FROM thoughts WHERE tenant_id=$1 AND NOT ('todo'=ANY(coalesce(tags,'{}'))) ORDER BY created_at DESC LIMIT 10",
+                    "SELECT content FROM thoughts WHERE tenant_id=$1 "
+                    "AND NOT ('todo'=ANY(coalesce(tags,'{}'))) "
+                    "AND NOT ('evening_checkin'=ANY(coalesce(tags,'{}'))) "
+                    "ORDER BY created_at DESC LIMIT 10",
                     tenant_id,
                 )
     except Exception as e:
