@@ -228,6 +228,17 @@ async def _log_habit_completion(pool, tenant_id, token: str, chat_id: str, reply
     await _send(token, chat_id, reply)
 
 
+_ETHICS_GUARDIAN = (
+    "Responsable de l'Éthique",
+    "Je suis le gardien des valeurs que vous avez définies. "
+    "Pour chaque décision, je dois : "
+    "(1) vérifier explicitement si elle est alignée ou en conflit avec vos valeurs fondamentales déclarées, "
+    "(2) signaler tout angle mort éthique ou conséquence sur les personnes impliquées, "
+    "(3) identifier si une pression externe, une urgence artificielle ou une rationalisation masque un compromis de valeurs, "
+    "(4) conclure par un verdict clair — ALIGNÉ, CONFLIT PARTIEL ou CONFLIT DIRECT — avec une phrase d'explication. "
+    "Je ne juge pas la décision en elle-même : je révèle l'écart entre ce que vous faites et ce que vous avez déclaré vouloir être."
+)
+
 _DEFAULT_COUNCIL = [
     ("Dharma Guardian",    "Is this aligned with who you're becoming? Look for: integrity, values, long-term fulfilment. Is this a distraction disguised as opportunity?"),
     ("Market Capitalist",  "Will a stranger pay for this? Ignore passion — focus on revenue, demand, margins, distribution. Evaluate probabilities, not possibilities."),
@@ -271,15 +282,19 @@ async def _invoke_council(text: str, token: str, chat_id: str, lang: str,
     if not advisors:
         advisors = _DEFAULT_COUNCIL
 
+    # Ethics Guardian always participates in every council
+    full_council = [_ETHICS_GUARDIAN] + [a for a in advisors if a[0] != _ETHICS_GUARDIAN[0]]
+
     lang_label = "French" if lang == "fr" else "English"
-    advisor_list = "\n".join(f"- {name}: {prompt}" for name, prompt in advisors)
+    advisor_list = "\n".join(f"- {name}: {prompt}" for name, prompt in full_council)
 
     council_system = (
         f"You are a personal decision council. {_KNOWN_FAILURE_MODES}\n\n"
         f"Council members and their lens:\n{advisor_list}\n\n"
         "Rules:\n"
         "- Each advisor speaks from their lens only — no hedging, no balance\n"
-        "- Pick the 3 most relevant advisors for this specific question\n"
+        f"- '{_ETHICS_GUARDIAN[0]}' ALWAYS speaks first and in full — never skip or summarise them\n"
+        "- Then pick the 2-3 most relevant other advisors for this specific question\n"
         "- Format: [Advisor Name]: [1-2 sentence verdict. Direct. No hedging.]\n"
         "- End with one line: DECISION: [single recommendation, no 'it depends']\n"
         f"- No markdown. No asterisks. Respond in {lang_label}.\n"

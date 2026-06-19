@@ -738,19 +738,26 @@ async function loadCouncil(session) {
   }
 }
 
+const ETHICS_GUARDIAN_CARD = `
+  <div class="council-card" style="border-color:rgba(200,144,42,.4);background:rgba(200,144,42,.08)">
+    <div class="council-card-name">Responsable de l'Éthique</div>
+    <div class="council-card-role" style="font-size:12px">Présent à chaque délibération — vérifie l'alignement avec vos valeurs</div>
+    <div style="margin-top:8px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);opacity:.7">Permanent</div>
+  </div>`
+
 function renderCouncil(members) {
   const el = document.getElementById('council-list')
-  if (!members.length) {
-    el.innerHTML = '<p style="font-size:13px;color:var(--ash);margin-bottom:12px">Aucun conseiller configuré — ajoutez-en un ci-dessous.</p>'
-    return
-  }
-  el.innerHTML = members.map(m => `
+  const customCards = members.map(m => `
     <div class="council-card">
       <button class="council-card-del" onclick="deleteCouncilMember('${m.id}')" title="Supprimer">×</button>
       <div class="council-card-name">${m.name}</div>
       <div class="council-card-role">${m.role || ''}</div>
     </div>
   `).join('')
+  el.innerHTML = ETHICS_GUARDIAN_CARD + customCards
+  if (!members.length) {
+    el.innerHTML += '<p style="font-size:13px;color:var(--ash);margin-top:12px;margin-bottom:12px;grid-column:1/-1">Ajoutez vos propres experts ci-dessous.</p>'
+  }
 }
 
 async function addCouncilMember() {
