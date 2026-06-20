@@ -86,6 +86,9 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
     entity_id = tenant["composio_entity_id"]
     lang      = tenant["language"] or "fr"
 
+    # Show typing indicator immediately so user knows we received the message
+    await _typing(token, chat_id)
+
     # P-03: GDPR /forget handled directly — never through LLM
     if FORGET_ALL.match(text):
         await _forget_all_confirm(token, chat_id, lang)
@@ -315,6 +318,7 @@ async def _invoke_council(text: str, token: str, chat_id: str, lang: str,
     )
 
     try:
+        await _typing(token, chat_id)  # refresh indicator before slow Claude call
         async with httpx.AsyncClient(timeout=25) as client:
             r = await client.post(
                 "https://api.anthropic.com/v1/messages",
@@ -422,6 +426,7 @@ async def _evening_checkin_response(pool, tenant_id, text: str, token: str, chat
     closing = None
     if ANTHROPIC_API_KEY:
         try:
+            await _typing(token, chat_id)  # refresh before slow Claude call
             async with httpx.AsyncClient(timeout=20) as client:
                 r = await client.post(
                     "https://api.anthropic.com/v1/messages",
@@ -531,6 +536,18 @@ async def _set_language(pool, tenant_id, lang: str, token: str, chat_id: str):
 
 def _t(lang: str, fr: str, en: str) -> str:
     return en if lang == "en" else fr
+
+
+async def _typing(token: str, chat_id: str):
+    """Send typing indicator — visible for ~5 seconds."""
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            await c.post(
+                f"https://api.telegram.org/bot{token}/sendChatAction",
+                json={"chat_id": chat_id, "action": "typing"},
+            )
+    except Exception:
+        pass  # never block on typing indicator failure
 
 
 async def _mark_responded(pool, tenant_id):
