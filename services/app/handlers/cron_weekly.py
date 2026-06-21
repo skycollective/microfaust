@@ -11,7 +11,7 @@ async def handle_cron_weekly_review(pool: asyncpg.Pool, job: asyncpg.Record):
     async with pool.acquire() as conn:
         await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
         tenant = await conn.fetchrow(
-            "SELECT telegram_bot_token, telegram_chat_id FROM tenants WHERE id=$1", tenant_id
+            "SELECT telegram_bot_token, telegram_chat_id, language FROM tenants WHERE id=$1", tenant_id
         )
         if not tenant or not tenant["telegram_chat_id"]:
             return
@@ -29,12 +29,19 @@ async def handle_cron_weekly_review(pool: asyncpg.Pool, job: asyncpg.Record):
             tenant_id, week_ago,
         )
 
-    text = (
-        "📊 Bilan de la semaine\n\n"
-        f"✅ Habitudes complétées : {habits_done}\n"
-        f"🧠 Pensées capturées : {thoughts_count}\n\n"
-        "Quelle est la chose dont tu es le plus fier cette semaine ?"
-    )
+    lang = tenant["language"] or "fr"
+    habits_line = f"✅ Habitudes complétées : {habits_done}\n" if habits_done > 0 else ""
+
+    if lang == "en":
+        thoughts_label = f"🧠 Thoughts captured : {thoughts_count}"
+        question = "What are you most proud of this week?"
+        title = "📊 Weekly review"
+    else:
+        thoughts_label = f"🧠 Pensées capturées : {thoughts_count}"
+        question = "Quelle est la chose dont tu es le plus fier cette semaine ?"
+        title = "📊 Bilan de la semaine"
+
+    text = f"{title}\n\n{habits_line}{thoughts_label}\n\n{question}"
     await _send(tenant["telegram_bot_token"], tenant["telegram_chat_id"], text)
 
     async with pool.acquire() as conn:
