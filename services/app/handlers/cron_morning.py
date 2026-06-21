@@ -11,7 +11,7 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
     async with pool.acquire() as conn:
         await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
         tenant = await conn.fetchrow(
-            "SELECT telegram_bot_token, telegram_chat_id FROM tenants WHERE id=$1",
+            "SELECT telegram_bot_token, telegram_chat_id, language FROM tenants WHERE id=$1",
             tenant_id,
         )
         if not tenant or not tenant["telegram_chat_id"]:
@@ -29,26 +29,52 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
 
     token   = tenant["telegram_bot_token"]
     chat_id = tenant["telegram_chat_id"]
+    lang    = tenant["language"] or "fr"
 
-    habit_lines = "\n".join(f"• {h['name']}" for h in habits) or "• Aucune habitude ce matin"
-    weather = await _get_weather()
+    habit_lines = "\n".join(f"• {h['name']}" for h in habits) or (
+        "• No morning habits yet" if lang == "en" else "• Aucune habitude ce matin"
+    )
+    weather = await _get_weather(lang)
 
     # Fetch calendar events if Google Calendar is connected
     import uuid
     events = await list_events_range(uuid.UUID(str(tenant_id)), pool, "today")
-    if events:
-        agenda_section = f"📅 Reunions du jour :\n{format_events_for_telegram(events)}"
-    elif events is not None:
-        agenda_section = "📅 Pas de reunion aujourd'hui"
+    if lang == "en":
+        if events:
+            agenda_section = f"📅 Today's meetings:\n{format_events_for_telegram(events)}"
+        elif events is not None:
+            agenda_section = "📅 No meetings today"
+        else:
+            agenda_section = "📅 Calendar: connect Google Calendar at microfaust.vercel.app"
+        values_question = (
+            "💎 Which of your values do you want to lead with today,\n"
+            "and what's one concrete intention?"
+        )
+        greeting = "Good morning!"
+        habits_label = "Morning habits:"
+        closing = "Have a great day!"
     else:
-        agenda_section = "📅 Agenda : connectez Google Calendar sur microfaust.vercel.app"
+        if events:
+            agenda_section = f"📅 Réunions du jour :\n{format_events_for_telegram(events)}"
+        elif events is not None:
+            agenda_section = "📅 Pas de réunion aujourd'hui"
+        else:
+            agenda_section = "📅 Agenda : connectez Google Calendar sur microfaust.vercel.app"
+        values_question = (
+            "💎 Quelle valeur veux-tu incarner aujourd'hui,\n"
+            "et quelle est ton intention concrète ?"
+        )
+        greeting = "Bonjour !"
+        habits_label = "Habitudes du matin :"
+        closing = "Bonne journée !"
 
     text = (
-        "Bonjour !\n\n"
+        f"{greeting}\n\n"
         f"{agenda_section}\n\n"
-        f"Habitudes du matin :\n{habit_lines}\n\n"
+        f"{habits_label}\n{habit_lines}\n\n"
         f"{weather}\n\n"
-        "Bonne journee !"
+        f"{values_question}\n\n"
+        f"{closing}"
     )
     await _send(token, chat_id, text)
 
@@ -59,7 +85,7 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
             tenant_id, text,
         )
 
-async def _get_weather() -> str:
+async def _get_weather(lang: str = "fr") -> str:
     try:
         async with httpx.AsyncClient(timeout=5) as c:
             r = await c.get(
@@ -70,10 +96,11 @@ async def _get_weather() -> str:
             data = r.json()
             probs = data["hourly"]["precipitation_probability"]
             if max(probs) >= 30:
-                return "Pluie possible aujourd'hui — prenez un parapluie"
-            return "Pas de pluie prévue"
+                return ("Rain likely today — bring an umbrella" if lang == "en"
+                        else "Pluie possible aujourd'hui — prenez un parapluie")
+            return "No rain forecast" if lang == "en" else "Pas de pluie prévue"
     except Exception:
-        return "Météo indisponible"
+        return "Weather unavailable" if lang == "en" else "Météo indisponible"
 
 async def _send(token, chat_id, text):
     try:
