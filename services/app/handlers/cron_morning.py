@@ -22,18 +22,10 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
         )
         if already:
             return
-        habits = await conn.fetch(
-            "SELECT name FROM habits WHERE tenant_id=$1 AND active=true AND time_of_day='morning'",
-            tenant_id,
-        )
-
     token   = tenant["telegram_bot_token"]
     chat_id = tenant["telegram_chat_id"]
     lang    = tenant["language"] or "fr"
 
-    habit_lines = "\n".join(f"• {h['name']}" for h in habits) or (
-        "• No morning habits yet" if lang == "en" else "• Aucune habitude ce matin"
-    )
     weather = await _get_weather(lang)
 
     # Fetch calendar events if Google Calendar is connected
@@ -51,8 +43,6 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
             "and what's one concrete intention?"
         )
         greeting = "Good morning!"
-        habits_label = "Morning habits:"
-        closing = "Have a great day!"
     else:
         if events:
             agenda_section = f"📅 Réunions du jour :\n{format_events_for_telegram(events)}"
@@ -65,16 +55,12 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
             "et quelle est ton intention concrète ?"
         )
         greeting = "Bonjour !"
-        habits_label = "Habitudes du matin :"
-        closing = "Bonne journée !"
 
     text = (
         f"{greeting}\n\n"
         f"{agenda_section}\n\n"
-        f"{habits_label}\n{habit_lines}\n\n"
         f"{weather}\n\n"
-        f"{values_question}\n\n"
-        f"{closing}"
+        f"{values_question}"
     )
     await _send(token, chat_id, text)
 
