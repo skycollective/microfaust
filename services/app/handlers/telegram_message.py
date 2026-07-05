@@ -34,17 +34,33 @@ _INTENT_SYSTEM = (
     "2. Write a natural reply in LANG_LABEL\n\n"
     'Return ONLY valid JSON: {"intent": "<intent>", "reply": "<reply>", "data": {}}\n\n'
     "Available intents:\n"
-    "- capture_thought: user is saving a note, idea, reflection, or context\n"
+    "- capture_thought: user is saving a note, idea, reflection, or context (no hashtag, no YouTube URL, not a task)\n"
+    "- capture_tagged: user saves something WITH a hashtag like #portfolio, #toread, #ideas, #microfaust, etc.\n"
+    "  TRIGGERS — message contains '#' followed by a word.\n"
+    "  Set data.tags = list of tag words found (lowercase, without #). e.g. ['portfolio']\n"
+    "  Set data.content = the clean content only, stripped of 'add to #tag', 'store in #tag', 'ajoute à #tag' prefixes AND the hashtags themselves.\n"
+    "  Example: 'Add to #portfolio ifef ai agent' → data.tags=['portfolio'], data.content='ifef ai agent'\n"
+    "  Example: 'Store in #toread and #ideas https://example.com' → data.tags=['toread','ideas'], data.content='https://example.com'\n"
     "- capture_todo: user wants to add a task or reminder to their todo list.\n"
     "  TRIGGERS — any of: 'add todo', 'add to todo', 'add to my list', 'ajoute', 'ajouter', 'à faire', 'à ma liste',\n"
     "  'remind me', 'rappelle-moi', 'don't forget', 'n'oublie pas', or a message that is a clear actionable task.\n"
+    "  Do NOT fire for messages with hashtags — use capture_tagged instead.\n"
     "  Set data.content = the clean task only, stripped of any 'add todo / add to todo / ajoute' prefix.\n"
     "  Example: 'Add deposit Patrick check to todo' → data.content = 'Deposit Patrick check'\n"
-    "  Example: 'Ajoute appeler le médecin à ma liste' → data.content = 'Appeler le médecin'\n"
+    "- capture_youtube: message contains a youtube.com or youtu.be URL.\n"
+    "  Set data.content = the URL. Set data.title = any description the user added (or empty string).\n"
+    "  Example: 'Watch this later https://youtu.be/abc123' → data.content='https://youtu.be/abc123', data.title='Watch this later'\n"
     "- add_habit: user wants to track a recurring habit\n"
     "- complete_habit: user says they finished a habit (done meditating, finished run, etc.)\n"
     "- show_agenda: user wants to see calendar or meetings — set data.timeframe to 'today', 'tomorrow', or 'week'\n"
-    "- show_thoughts: user wants to see their saved notes or ideas — set data.filter='todo' if user asks for todo/task list specifically\n"
+    "- show_thoughts: user wants to see their saved notes or ideas (plain notes, no tag filter)\n"
+    "- show_by_tag: user asks to see items with a specific hashtag or category.\n"
+    "  TRIGGERS — 'show #tag', 'my #tag', 'list #tag', 'what's in #tag', 'mes #tag', 'montre #tag', or asking about a named category.\n"
+    "  Set data.tag = the tag word (lowercase, without #). Example: 'show #portfolio' → data.tag='portfolio'\n"
+    "- show_youtube: user asks to see their saved YouTube videos / watch list.\n"
+    "  TRIGGERS — 'my videos', 'videos to watch', 'watch list', 'mes vidéos', 'liste de vidéos'\n"
+    "- show_todos: user asks to see their task or todo list.\n"
+    "  TRIGGERS — 'my todos', 'my tasks', 'task list', 'mes tâches', 'ma liste'\n"
     "- create_event: user wants to add a calendar event or meeting\n"
     "- invoke_council: user wants advice on a decision or multiple perspectives — keywords 'conseil' or 'comité' strongly indicate this\n"
     "- language_switch_en: user wants to switch to English\n"
@@ -53,10 +69,14 @@ _INTENT_SYSTEM = (
     "- greeting: simple greeting with no actionable content\n"
     "- unknown: none of the above fits\n\n"
     "Rules:\n"
+    "- capture_tagged takes priority over capture_todo and capture_thought whenever '#' is present\n"
+    "- capture_youtube takes priority whenever a YouTube URL is present\n"
     "- For create_event: include title, start, end in ISO 8601 format in 'data' if mentioned\n"
     "- For show_agenda: always set data.timeframe — default 'today', use 'tomorrow' or 'week' if user says so\n"
     "- For capture_thought: confirm you saved it, briefly echo what you understood\n"
+    "- For capture_tagged: confirm saved with the tag(s); echo clean content only\n"
     "- For capture_todo: confirm the clean task was added; echo only the task name, not the full sentence\n"
+    "- For capture_youtube: confirm the video was saved to watch list\n"
     "- For invoke_council: classify IMMEDIATELY — never classify council context as capture_thought\n"
     "- For evening_checkin: reply should be empty string '' — the bot generates its own closing\n"
     "- For greetings: respond warmly and briefly\n"
@@ -115,9 +135,18 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
         await _set_language(pool, tenant_id, "fr", token, chat_id)
     elif intent == "capture_todo":
         content = data.get("content") or text
-        await _capture_thought(pool, tenant_id, content, token, chat_id, reply, is_todo=True)
+        await _capture_thought(pool, tenant_id, content, token, chat_id, reply, tags=["todo"])
+    elif intent == "capture_tagged":
+        tags = data.get("tags") or []
+        content = data.get("content") or text
+        await _capture_thought(pool, tenant_id, content, token, chat_id, reply, tags=tags)
+    elif intent == "capture_youtube":
+        content = data.get("content") or text
+        title = data.get("title", "")
+        saved = f"{title} {content}".strip() if title else content
+        await _capture_thought(pool, tenant_id, saved, token, chat_id, reply, tags=["youtube", "watchlist"])
     elif intent == "capture_thought":
-        await _capture_thought(pool, tenant_id, text, token, chat_id, reply, is_todo=False)
+        await _capture_thought(pool, tenant_id, text, token, chat_id, reply, tags=[])
     elif intent == "add_habit":
         await _add_habit_from_text(pool, tenant_id, text, token, chat_id, reply)
     elif intent == "complete_habit":
@@ -125,7 +154,13 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
     elif intent == "show_agenda":
         await _show_agenda(tenant_id, pool, token, chat_id, lang, data.get("timeframe", "today"))
     elif intent == "show_thoughts":
-        await _show_thoughts(pool, tenant_id, token, chat_id, lang, todo_only=data.get("filter") == "todo")
+        await _show_thoughts(pool, tenant_id, token, chat_id, lang)
+    elif intent == "show_todos":
+        await _show_by_tag(pool, tenant_id, token, chat_id, lang, "todo")
+    elif intent == "show_by_tag":
+        await _show_by_tag(pool, tenant_id, token, chat_id, lang, data.get("tag", ""))
+    elif intent == "show_youtube":
+        await _show_youtube(pool, tenant_id, token, chat_id, lang)
     elif intent == "create_event":
         await _handle_calendar_create(tenant_id, pool, data, token, chat_id, lang)
     elif intent == "evening_checkin":
@@ -193,8 +228,9 @@ async def _route_with_claude(text: str, lang: str) -> dict:
 # ── Intent handlers ───────────────────────────────────────────────────────────
 
 async def _capture_thought(pool, tenant_id, text: str, token: str, chat_id: str, reply: str,
-                           is_todo: bool = False):
-    tags = ["todo"] if is_todo else []
+                           tags: list | None = None):
+    if tags is None:
+        tags = []
     try:
         async with pool.acquire() as conn:
             await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
@@ -475,35 +511,74 @@ async def _show_agenda(tenant_id, pool, token: str, chat_id: str, lang: str = "f
     await _send(token, chat_id, header + "\n\n" + format_events_for_telegram(events))
 
 
-async def _show_thoughts(pool, tenant_id, token: str, chat_id: str, lang: str = "fr",
-                         todo_only: bool = False):
+async def _show_thoughts(pool, tenant_id, token: str, chat_id: str, lang: str = "fr"):
+    """Show plain notes only — excludes all tagged content."""
+    _EXCLUDED = ["todo", "evening_checkin", "youtube", "watchlist", "portfolio",
+                 "toread", "ideas", "microfaust"]
     try:
         async with pool.acquire() as conn:
             await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
-            if todo_only:
-                rows = await conn.fetch(
-                    "SELECT content FROM thoughts WHERE tenant_id=$1 AND 'todo'=ANY(tags) ORDER BY created_at DESC LIMIT 20",
-                    tenant_id,
-                )
-            else:
-                rows = await conn.fetch(
-                    "SELECT content FROM thoughts WHERE tenant_id=$1 "
-                    "AND NOT ('todo'=ANY(coalesce(tags,'{}'))) "
-                    "AND NOT ('evening_checkin'=ANY(coalesce(tags,'{}'))) "
-                    "ORDER BY created_at DESC LIMIT 10",
-                    tenant_id,
-                )
+            rows = await conn.fetch(
+                "SELECT content FROM thoughts WHERE tenant_id=$1 "
+                "AND (tags IS NULL OR tags = '{}' OR NOT tags && $2) "
+                "ORDER BY created_at DESC LIMIT 10",
+                tenant_id, _EXCLUDED,
+            )
     except Exception as e:
         logger.error("show_thoughts failed: %s", e)
         rows = []
     if not rows:
-        if todo_only:
-            await _send(token, chat_id, _t(lang, "Aucune tâche en cours.", "No tasks yet."))
-        else:
-            await _send(token, chat_id, _t(lang, "Aucune note sauvegardée.", "No saved notes yet."))
+        await _send(token, chat_id, _t(lang, "Aucune note sauvegardée.", "No saved notes yet."))
         return
     lines = [f"- {r['content']}" for r in rows]
-    header = _t(lang, "Vos taches :" if todo_only else "Vos notes :", "Your tasks:" if todo_only else "Your notes:")
+    await _send(token, chat_id, _t(lang, "Vos notes :", "Your notes:") + "\n\n" + "\n".join(lines))
+
+
+async def _show_by_tag(pool, tenant_id, token: str, chat_id: str, lang: str, tag: str):
+    """Show thoughts filtered by a specific tag."""
+    if not tag:
+        await _send(token, chat_id, _t(lang, "Quel tag voulez-vous voir ?", "Which tag do you want to see?"))
+        return
+    tag = tag.lower().lstrip("#")
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            rows = await conn.fetch(
+                "SELECT content FROM thoughts WHERE tenant_id=$1 AND $2=ANY(coalesce(tags,'{}')) "
+                "ORDER BY created_at DESC LIMIT 20",
+                tenant_id, tag,
+            )
+    except Exception as e:
+        logger.error("show_by_tag failed: %s", e)
+        rows = []
+    if not rows:
+        await _send(token, chat_id, _t(lang,
+            f"Rien trouvé dans #{tag}.", f"Nothing found in #{tag}."))
+        return
+    lines = [f"- {r['content']}" for r in rows]
+    header = _t(lang, f"#{tag} :", f"#{tag}:")
+    await _send(token, chat_id, header + "\n\n" + "\n".join(lines))
+
+
+async def _show_youtube(pool, tenant_id, token: str, chat_id: str, lang: str):
+    """Show saved YouTube watch-later list."""
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            rows = await conn.fetch(
+                "SELECT content FROM thoughts WHERE tenant_id=$1 AND 'youtube'=ANY(coalesce(tags,'{}')) "
+                "ORDER BY created_at DESC LIMIT 20",
+                tenant_id,
+            )
+    except Exception as e:
+        logger.error("show_youtube failed: %s", e)
+        rows = []
+    if not rows:
+        await _send(token, chat_id, _t(lang,
+            "Aucune vidéo sauvegardée.", "No saved videos yet."))
+        return
+    lines = [f"- {r['content']}" for r in rows]
+    header = _t(lang, "Vidéos à regarder :", "Videos to watch:")
     await _send(token, chat_id, header + "\n\n" + "\n".join(lines))
 
 
