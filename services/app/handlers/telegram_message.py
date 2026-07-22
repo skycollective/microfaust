@@ -16,6 +16,7 @@ import asyncpg
 import httpx
 
 from calendar_client import list_events_range, create_event, format_events_for_telegram
+from handlers.chat_agent import chat_reply
 import uuid as _uuid
 
 logger = logging.getLogger(__name__)
@@ -169,7 +170,9 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
         await _invoke_council(text, token, chat_id, lang, pool=pool, tenant_id=tenant_id)
         await _mark_responded(pool, tenant_id)
     else:
-        await _send(token, chat_id, reply)
+        # greeting / unknown / general conversation → real conversational agent
+        # (stateful, context-aware, Sonnet) instead of the Haiku classifier's stub reply
+        await chat_reply(pool, tenant_id, chat_id, token, lang, text)
         await _mark_responded(pool, tenant_id)
 
 
