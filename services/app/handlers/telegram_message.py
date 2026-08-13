@@ -117,10 +117,14 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
     async with pool.acquire() as conn:
         await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
         tenant = await conn.fetchrow(
-            "SELECT telegram_bot_token, composio_entity_id, language FROM tenants WHERE id=$1",
+            "SELECT telegram_bot_token, telegram_chat_id, composio_entity_id, language FROM tenants WHERE id=$1",
             tenant_id,
         )
     if not tenant:
+        return
+
+    # Security: only the registered chat_id may interact with this tenant's bot
+    if str(chat_id) != str(tenant["telegram_chat_id"]):
         return
 
     token     = tenant["telegram_bot_token"]
