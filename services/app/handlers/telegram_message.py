@@ -62,6 +62,23 @@ _INTENT_SYSTEM = (
     "  TRIGGERS — 'my videos', 'videos to watch', 'watch list', 'mes vidéos', 'liste de vidéos'\n"
     "- show_todos: user asks to see their task or todo list.\n"
     "  TRIGGERS — 'my todos', 'my tasks', 'task list', 'mes tâches', 'ma liste'\n"
+    "- capture_project: user wants to create or update a project in their portfolio.\n"
+    "  TRIGGERS — 'add project', 'new project', 'create project', 'add to portfolio', 'nouveau projet'.\n"
+    "  Set data.name = project name. Set data.outcome = desired outcome if mentioned (else empty).\n"
+    "  Set data.horizon = timeframe if mentioned (e.g. 'September', '6 months', else empty).\n"
+    "  Example: 'Add project SAMSE, outcome: deliver report, deadline September' → data.name='SAMSE', data.outcome='Deliver report', data.horizon='September'\n"
+    "- show_projects: user asks to see their active projects or portfolio.\n"
+    "  TRIGGERS — 'my projects', 'show portfolio', 'active projects', 'mes projets', 'mon portfolio'\n"
+    "- set_weekly_outcomes: user is defining their 3 outcomes for the week.\n"
+    "  TRIGGERS — numbered list with 3 items, or 'this week I want to', 'weekly outcomes', 'objectifs de la semaine', or replying to a Sunday PM planning prompt.\n"
+    "  Set data.outcomes = list of {rank, description, project_name} objects.\n"
+    "  Extract project name if user wrote '— ProjectName' or 'for ProjectName' after the outcome.\n"
+    "  Example: '1. Submit grant — Organisyl\\n2. Finish chapters — MaisonLeela\\n3. SAMSE report' → data.outcomes=[{rank:1,description:'Submit grant',project_name:'Organisyl'},{rank:2,description:'Finish chapters',project_name:'MaisonLeela'},{rank:3,description:'SAMSE report',project_name:''}]\n"
+    "- update_outcome_status: user reports progress on a weekly outcome.\n"
+    "  TRIGGERS — 'done', 'finished', 'completed', 'terminé', 'fait', 'c'est fait', '70%', 'in progress', 'en cours', or referencing an outcome by name with a status.\n"
+    "  Set data.description_hint = the outcome name/keyword mentioned. Set data.status = 'done' | 'in_progress' | 'carried_forward'.\n"
+    "- what_now: user asks what to focus on right now.\n"
+    "  TRIGGERS — 'what now', 'what should I do', 'quoi faire', 'que faire maintenant', 'what next'\n"
     "- create_event: user wants to add a calendar event or meeting\n"
     "- invoke_council: user wants advice on a decision or multiple perspectives — keywords 'conseil' or 'comité' strongly indicate this\n"
     "- language_switch_en: user wants to switch to English\n"
@@ -162,6 +179,16 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
         await _show_by_tag(pool, tenant_id, token, chat_id, lang, data.get("tag", ""))
     elif intent == "show_youtube":
         await _show_youtube(pool, tenant_id, token, chat_id, lang)
+    elif intent == "capture_project":
+        await _capture_project(pool, tenant_id, data, token, chat_id, reply, lang)
+    elif intent == "show_projects":
+        await _show_projects(pool, tenant_id, token, chat_id, lang)
+    elif intent == "set_weekly_outcomes":
+        await _set_weekly_outcomes(pool, tenant_id, data, token, chat_id, reply, lang)
+    elif intent == "update_outcome_status":
+        await _update_outcome_status(pool, tenant_id, data, token, chat_id, reply, lang)
+    elif intent == "what_now":
+        await _what_now(pool, tenant_id, token, chat_id, lang)
     elif intent == "create_event":
         await _handle_calendar_create(tenant_id, pool, data, token, chat_id, lang)
     elif intent == "evening_checkin":
@@ -583,6 +610,231 @@ async def _show_youtube(pool, tenant_id, token: str, chat_id: str, lang: str):
     lines = [f"- {r['content']}" for r in rows]
     header = _t(lang, "Vidéos à regarder :", "Videos to watch:")
     await _send(token, chat_id, header + "\n\n" + "\n".join(lines))
+
+
+async def _capture_project(pool, tenant_id, data: dict, token: str, chat_id: str, reply: str, lang: str):
+    name = data.get("name", "").strip()
+    if not name:
+        await _send(token, chat_id, _t(lang,
+            "Quel est le nom du projet ?", "What is the project name?"))
+        return
+    outcome = data.get("outcome", "") or ""
+    horizon = data.get("horizon", "") or ""
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            await conn.execute(
+                """INSERT INTO projects (tenant_id, name, outcome, horizon)
+                   VALUES ($1,$2,$3,$4)
+                   ON CONFLICT DO NOTHING""",
+                tenant_id, name, outcome, horizon,
+            )
+    except Exception as e:
+        logger.error("capture_project failed: %s", e)
+    await _send(token, chat_id, reply)
+    await _mark_responded(pool, tenant_id)
+
+
+async def _show_projects(pool, tenant_id, token: str, chat_id: str, lang: str):
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            rows = await conn.fetch(
+                "SELECT name, outcome, horizon, status FROM projects "
+                "WHERE tenant_id=$1 ORDER BY status, created_at",
+                tenant_id,
+            )
+    except Exception as e:
+        logger.error("show_projects failed: %s", e)
+        rows = []
+    if not rows:
+        await _send(token, chat_id, _t(lang,
+            "Aucun projet dans ton portfolio. Dis 'ajouter projet [nom]' pour commencer.",
+            "No projects in your portfolio. Say 'add project [name]' to start."))
+        return
+    status_icon = {"active": "🟢", "paused": "⏸", "done": "✅"}
+    lines = []
+    for p in rows:
+        icon = status_icon.get(p["status"], "•")
+        line = f"{icon} {p['name']}"
+        if p["outcome"]:
+            line += f"\n   → {p['outcome']}"
+        if p["horizon"]:
+            line += f"  [{p['horizon']}]"
+        lines.append(line)
+    header = _t(lang, "Ton portfolio :", "Your portfolio:")
+    await _send(token, chat_id, header + "\n\n" + "\n\n".join(lines))
+    await _mark_responded(pool, tenant_id)
+
+
+async def _set_weekly_outcomes(pool, tenant_id, data: dict, token: str, chat_id: str, reply: str, lang: str):
+    from datetime import date, timedelta
+    def week_start(d): return d - timedelta(days=d.weekday())
+    ws = week_start(date.today())
+    outcomes = data.get("outcomes", [])
+    if not outcomes:
+        await _send(token, chat_id, _t(lang,
+            "Je n'ai pas compris les 3 objectifs. Essaie :\n1. [objectif] — [projet]\n2. ...\n3. ...",
+            "I didn't catch the 3 outcomes. Try:\n1. [outcome] — [project]\n2. ...\n3. ..."))
+        return
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            for o in outcomes:
+                await conn.execute(
+                    """INSERT INTO weekly_outcomes (tenant_id, week_start, rank, description, project_name)
+                       VALUES ($1,$2,$3,$4,$5)
+                       ON CONFLICT (tenant_id, week_start, rank)
+                       DO UPDATE SET description=$4, project_name=$5, status='pending'""",
+                    tenant_id, ws, int(o.get("rank", 1)),
+                    str(o.get("description", "")), str(o.get("project_name", "") or ""),
+                )
+    except Exception as e:
+        logger.error("set_weekly_outcomes failed: %s", e)
+    await _send(token, chat_id, reply)
+    await _mark_responded(pool, tenant_id)
+
+
+async def _update_outcome_status(pool, tenant_id, data: dict, token: str, chat_id: str, reply: str, lang: str):
+    from datetime import date, timedelta
+    def week_start(d): return d - timedelta(days=d.weekday())
+    ws = week_start(date.today())
+    hint = data.get("description_hint", "").lower()
+    status = data.get("status", "done")
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            if hint:
+                await conn.execute(
+                    """UPDATE weekly_outcomes SET status=$1
+                       WHERE tenant_id=$2 AND week_start=$3
+                         AND description ILIKE $4""",
+                    status, tenant_id, ws, f"%{hint}%",
+                )
+            else:
+                # Update rank 1 by default
+                await conn.execute(
+                    "UPDATE weekly_outcomes SET status=$1 WHERE tenant_id=$2 AND week_start=$3 AND rank=1",
+                    status, tenant_id, ws,
+                )
+    except Exception as e:
+        logger.error("update_outcome_status failed: %s", e)
+    await _send(token, chat_id, reply)
+    await _mark_responded(pool, tenant_id)
+
+
+async def _what_now(pool, tenant_id, token: str, chat_id: str, lang: str):
+    from datetime import date, timedelta, datetime, timezone
+    import uuid as _uuid_mod
+
+    def week_start(d): return d - timedelta(days=d.weekday())
+    ws = week_start(date.today())
+
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            # Get weekly outcomes ordered by rank, skip done ones
+            outcomes = await conn.fetch(
+                "SELECT rank, description, project_name, status FROM weekly_outcomes "
+                "WHERE tenant_id=$1 AND week_start=$2 AND status != 'done' ORDER BY rank",
+                tenant_id, ws,
+            )
+            # Get todos linked to top outcome's project, or all todos if no outcomes
+            top_project = outcomes[0]["project_name"] if outcomes else None
+            if top_project:
+                todos = await conn.fetch(
+                    "SELECT content FROM thoughts WHERE tenant_id=$1 AND 'todo'=ANY(coalesce(tags,'{}')) "
+                    "AND (project_name ILIKE $2 OR content ILIKE $2) ORDER BY created_at ASC LIMIT 5",
+                    tenant_id, f"%{top_project}%",
+                )
+                if not todos:
+                    todos = await conn.fetch(
+                        "SELECT content FROM thoughts WHERE tenant_id=$1 AND 'todo'=ANY(coalesce(tags,'{}')) "
+                        "ORDER BY created_at ASC LIMIT 5",
+                        tenant_id,
+                    )
+            else:
+                todos = await conn.fetch(
+                    "SELECT content FROM thoughts WHERE tenant_id=$1 AND 'todo'=ANY(coalesce(tags,'{}')) "
+                    "ORDER BY created_at ASC LIMIT 5",
+                    tenant_id,
+                )
+    except Exception as e:
+        logger.error("what_now fetch failed: %s", e)
+        await _send(token, chat_id, _t(lang, "Impossible de récupérer tes données.", "Could not fetch your data."))
+        return
+
+    # Get today's calendar to find time until next meeting
+    try:
+        events = await list_events_range(_uuid_mod.UUID(str(tenant_id)), pool, "today")
+    except Exception:
+        events = []
+
+    now_utc = datetime.now(timezone.utc)
+    next_event = None
+    minutes_free = None
+    if events:
+        for ev in events:
+            ev_start = ev.get("start", {}).get("dateTime")
+            if ev_start:
+                try:
+                    from dateutil import parser as dtparser
+                    ev_dt = dtparser.parse(ev_start)
+                    if ev_dt.tzinfo is None:
+                        from datetime import timezone as tz
+                        import pytz
+                        ev_dt = pytz.timezone("Europe/Paris").localize(ev_dt)
+                    diff = (ev_dt - now_utc).total_seconds() / 60
+                    if diff > 0 and (minutes_free is None or diff < minutes_free):
+                        minutes_free = int(diff)
+                        next_event = ev.get("summary", "meeting")
+                except Exception:
+                    pass
+
+    # Build the response
+    if not outcomes and not todos:
+        msg = _t(lang,
+            "Pas d'objectifs ni de tâches cette semaine. Dis 'définir objectifs' pour commencer.",
+            "No outcomes or todos this week. Say 'set weekly outcomes' to get started.")
+        await _send(token, chat_id, msg)
+        await _mark_responded(pool, tenant_id)
+        return
+
+    lines = []
+
+    if minutes_free is not None:
+        if lang == "en":
+            lines.append(f"You have {minutes_free} min before {next_event}.\n")
+        else:
+            lines.append(f"Tu as {minutes_free} min avant {next_event}.\n")
+
+    if outcomes:
+        top = outcomes[0]
+        proj = f" [{top['project_name']}]" if top["project_name"] else ""
+        if lang == "en":
+            lines.append(f"Focus on weekly outcome #{top['rank']}:{proj}\n{top['description']}")
+        else:
+            lines.append(f"Concentre-toi sur l'objectif #{top['rank']} :{proj}\n{top['description']}")
+
+    if todos:
+        task = todos[0]["content"]
+        if lang == "en":
+            lines.append(f"\nNext task: {task}")
+        else:
+            lines.append(f"\nProchaine tâche : {task}")
+
+        # Show next 2 outcomes as backup context
+        if len(outcomes) > 1 and (minutes_free is None or minutes_free > 30):
+            next_outcomes = outcomes[1:3]
+            if lang == "en":
+                lines.append("\nOnce done, move to:")
+            else:
+                lines.append("\nEnsuite :")
+            for o in next_outcomes:
+                lines.append(f"  • {o['description']}")
+
+    await _send(token, chat_id, "\n".join(lines))
+    await _mark_responded(pool, tenant_id)
 
 
 async def _handle_calendar_create(tenant_id, pool, data: dict,

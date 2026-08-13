@@ -1,10 +1,15 @@
 import logging
-from datetime import date
+from datetime import date, timedelta
 import asyncpg, httpx
 
 from calendar_client import list_events_range, format_events_for_telegram
 
 logger = logging.getLogger(__name__)
+
+def _week_start(d: date) -> date:
+    """Return the Monday of the week containing d."""
+    return d - timedelta(days=d.weekday())
+
 
 async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
     tenant_id = job["tenant_id"]
@@ -22,45 +27,94 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
         )
         if already:
             return
+
+        # Fetch this week's outcomes
+        ws = _week_start(date.today())
+        outcomes = await conn.fetch(
+            "SELECT rank, description, project_name, status FROM weekly_outcomes "
+            "WHERE tenant_id=$1 AND week_start=$2 ORDER BY rank",
+            tenant_id, ws,
+        )
+
+        # Upcoming deadlines (todos with content containing a date or deadline mention)
+        # Simple approach: surface todos that are overdue or due soon
+        urgent_todos = await conn.fetch(
+            "SELECT content FROM thoughts WHERE tenant_id=$1 AND 'todo'=ANY(coalesce(tags,'{}')) "
+            "AND (content ILIKE '%today%' OR content ILIKE '%tomorrow%' OR content ILIKE '%urgent%' "
+            "     OR content ILIKE '%deadline%' OR content ILIKE '%sept%' OR content ILIKE '%august%' "
+            "     OR content ILIKE '%demain%' OR content ILIKE '%urgent%' OR content ILIKE '%échéance%') "
+            "ORDER BY created_at ASC LIMIT 3",
+            tenant_id,
+        )
+
     token   = tenant["telegram_bot_token"]
     chat_id = tenant["telegram_chat_id"]
     lang    = tenant["language"] or "fr"
 
-    weather = await _get_weather(lang)
-
-    # Fetch calendar events if Google Calendar is connected
+    # Calendar events
     import uuid
     events = await list_events_range(uuid.UUID(str(tenant_id)), pool, "today")
+
     if lang == "en":
         if events:
-            agenda_section = f"📅 Today's meetings:\n{format_events_for_telegram(events)}"
+            agenda_section = f"📅 Today:\n{format_events_for_telegram(events)}"
         elif events is not None:
             agenda_section = "📅 No meetings today"
         else:
-            agenda_section = "📅 Calendar: connect Google Calendar at microfaust.vercel.app"
-        values_question = (
-            "💎 Which of your values do you want to lead with today,\n"
-            "and what's one concrete intention?"
-        )
+            agenda_section = "📅 Connect Google Calendar at microfaust.vercel.app"
+
+        if outcomes:
+            status_emoji = {"done": "🟢", "in_progress": "🟡", "carried_forward": "🔵", "pending": "⬜"}
+            outcome_lines = "\n".join(
+                f"{status_emoji.get(o['status'], '⬜')} {o['rank']}. {o['description']}"
+                + (f"  [{o['project_name']}]" if o['project_name'] else "")
+                for o in outcomes
+            )
+            weekly_section = f"🎯 This week's 3:\n{outcome_lines}"
+        else:
+            weekly_section = "🎯 No weekly outcomes set yet — reply 'set weekly outcomes' to add them"
+
+        deadline_section = ""
+        if urgent_todos:
+            deadline_lines = "\n".join(f"⚠️ {r['content']}" for r in urgent_todos)
+            deadline_section = f"\n\n{deadline_lines}"
+
+        focus_question = "What is your main focus today?"
         greeting = "Good morning!"
+
     else:
         if events:
-            agenda_section = f"📅 Réunions du jour :\n{format_events_for_telegram(events)}"
+            agenda_section = f"📅 Aujourd'hui :\n{format_events_for_telegram(events)}"
         elif events is not None:
             agenda_section = "📅 Pas de réunion aujourd'hui"
         else:
-            agenda_section = "📅 Agenda : connectez Google Calendar sur microfaust.vercel.app"
-        values_question = (
-            "💎 Quelle valeur veux-tu incarner aujourd'hui,\n"
-            "et quelle est ton intention concrète ?"
-        )
+            agenda_section = "📅 Connectez Google Calendar sur microfaust.vercel.app"
+
+        if outcomes:
+            status_emoji = {"done": "🟢", "in_progress": "🟡", "carried_forward": "🔵", "pending": "⬜"}
+            outcome_lines = "\n".join(
+                f"{status_emoji.get(o['status'], '⬜')} {o['rank']}. {o['description']}"
+                + (f"  [{o['project_name']}]" if o['project_name'] else "")
+                for o in outcomes
+            )
+            weekly_section = f"🎯 3 de cette semaine :\n{outcome_lines}"
+        else:
+            weekly_section = "🎯 Pas encore d'objectifs pour la semaine — répondez 'définir objectifs' pour en ajouter"
+
+        deadline_section = ""
+        if urgent_todos:
+            deadline_lines = "\n".join(f"⚠️ {r['content']}" for r in urgent_todos)
+            deadline_section = f"\n\n{deadline_lines}"
+
+        focus_question = "Quel est ton intention principale aujourd'hui ?"
         greeting = "Bonjour !"
 
     text = (
         f"{greeting}\n\n"
         f"{agenda_section}\n\n"
-        f"{weather}\n\n"
-        f"{values_question}"
+        f"{weekly_section}"
+        f"{deadline_section}\n\n"
+        f"{focus_question}"
     )
     await _send(token, chat_id, text)
 
@@ -70,6 +124,7 @@ async def handle_cron_morning(pool: asyncpg.Pool, job: asyncpg.Record):
             "INSERT INTO briefings (tenant_id,briefing_type,content) VALUES ($1,'morning',$2)",
             tenant_id, text,
         )
+
 
 async def _get_weather(lang: str = "fr") -> str:
     try:
@@ -87,6 +142,7 @@ async def _get_weather(lang: str = "fr") -> str:
             return "No rain forecast" if lang == "en" else "Pas de pluie prévue"
     except Exception:
         return "Weather unavailable" if lang == "en" else "Météo indisponible"
+
 
 async def _send(token, chat_id, text):
     try:

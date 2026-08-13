@@ -15,15 +15,17 @@ from handlers.telegram_start import handle_telegram_start
 from handlers.cron_morning import handle_cron_morning
 from handlers.cron_evening import handle_cron_evening
 from handlers.cron_weekly import handle_cron_weekly_review
+from handlers.cron_sunday_pm import handle_cron_sunday_pm
 
 logger = logging.getLogger(__name__)
 
 HANDLERS = {
-    "telegram_message":  handle_telegram_message,
-    "telegram_start":    handle_telegram_start,
-    "cron_morning":      handle_cron_morning,
-    "cron_evening":      handle_cron_evening,
+    "telegram_message":   handle_telegram_message,
+    "telegram_start":     handle_telegram_start,
+    "cron_morning":       handle_cron_morning,
+    "cron_evening":       handle_cron_evening,
     "cron_weekly_review": handle_cron_weekly_review,
+    "cron_sunday_pm":     handle_cron_sunday_pm,
 }
 
 
