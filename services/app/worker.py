@@ -4,11 +4,24 @@ Three wake paths (P-01):
   1. LISTEN/NOTIFY — instant on new job insert
   2. Startup drain  — clears backlog after restart
   3. 60-second timer — catches lost NOTIFYs
+Scheduler: internal asyncio loop fires cron jobs — no pg_cron needed.
 """
 import asyncio
 import logging
+from datetime import datetime
+import pytz
 
 import asyncpg
+
+PARIS = pytz.timezone("Europe/Paris")
+
+# (job_type, hour, minute, weekday)  weekday: 0-6 Mon-Sun, None=daily
+_CRON_SCHEDULE = [
+    ("cron_morning",       7,  5, None),   # daily 07:05 Paris
+    ("cron_evening",      20, 30, None),   # daily 20:30 Paris
+    ("cron_weekly_review", 9,  0,    6),   # Sunday 09:00 Paris
+    ("cron_sunday_pm",    17,  0,    6),   # Sunday 17:00 Paris
+]
 
 from handlers.telegram_message import handle_telegram_message
 from handlers.telegram_start import handle_telegram_start
@@ -107,3 +120,42 @@ async def periodic_drain(pool: asyncpg.Pool) -> None:
             await drain(pool)
         except Exception as exc:
             logger.error("Periodic drain error: %s", exc)
+
+
+async def cron_scheduler(pool: asyncpg.Pool) -> None:
+    """Internal scheduler — checks every minute, fires jobs at configured times."""
+    _fired: set[str] = set()  # tracks which jobs fired this minute
+
+    while True:
+        await asyncio.sleep(30)
+        now = datetime.now(PARIS)
+        minute_key = now.strftime("%Y-%m-%d %H:%M")
+
+        for job_type, hour, minute, weekday in _CRON_SCHEDULE:
+            if now.hour != hour or now.minute != minute:
+                continue
+            if weekday is not None and now.weekday() != weekday:
+                continue
+            fire_key = f"{job_type}:{minute_key}"
+            if fire_key in _fired:
+                continue
+            _fired.add(fire_key)
+            # Keep _fired small — only keep today's keys
+            today_prefix = now.strftime("%Y-%m-%d")
+            _fired = {k for k in _fired if k.endswith(today_prefix) or today_prefix in k}
+            try:
+                async with pool.acquire() as conn:
+                    tenants = await conn.fetch(
+                        "SELECT id FROM tenants WHERE telegram_chat_id IS NOT NULL AND active=true"
+                    )
+                    for t in tenants:
+                        idem_key = f"{t['id']}:{job_type}:{minute_key}"
+                        await conn.execute(
+                            """INSERT INTO job_queue (tenant_id, job_type, payload, idempotency_key)
+                               VALUES ($1,$2,'{}',$3)
+                               ON CONFLICT (idempotency_key) DO NOTHING""",
+                            t["id"], job_type, idem_key,
+                        )
+                logger.info("Cron fired: %s for %d tenant(s)", job_type, len(tenants))
+            except Exception as exc:
+                logger.error("Cron scheduler error (%s): %s", job_type, exc)

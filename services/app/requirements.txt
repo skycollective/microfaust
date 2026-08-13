@@ -9,3 +9,5 @@ python-dotenv==1.0.1
 anthropic==0.34.2
 composio-core
 openai==1.45.0
+pytz==2024.1
+python-dateutil==2.9.0

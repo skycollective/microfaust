@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 from middleware import TenantContextMiddleware
 from routers import webhook, health, onboarding, values, council
-from worker import drain, periodic_drain, start_listener
+from worker import drain, periodic_drain, start_listener, cron_scheduler
 
 load_dotenv()
 logging.basicConfig(
@@ -47,10 +47,14 @@ async def lifespan(app: FastAPI):
     # ── Worker: 60-second safety net (P-01) ───────────────────────────
     drain_task = asyncio.create_task(periodic_drain(pool))
 
+    # ── Internal cron scheduler (replaces pg_cron) ────────────────────
+    cron_task = asyncio.create_task(cron_scheduler(pool))
+
     logger.info("MICROFAUST ready — API + Worker running")
     yield
 
     drain_task.cancel()
+    cron_task.cancel()
     await listen_conn.close()
     await pool.close()
 
