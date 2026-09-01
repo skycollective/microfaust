@@ -32,79 +32,81 @@ _INTENT_SYSTEM = (
     "You are an intent classifier for a personal assistant Telegram bot called MICROFAUST.\n\n"
     "The user sends a message. You must:\n"
     "1. Classify the intent\n"
-    "2. Write a natural reply in LANG_LABEL\n\n"
+    "2. Write a short confirmation reply\n\n"
     'Return ONLY valid JSON: {"intent": "<intent>", "reply": "<reply>", "data": {}}\n\n'
     "Available intents:\n"
-    "- capture_thought: user is saving a note, idea, reflection, or context (no hashtag, no YouTube URL, not a task)\n"
-    "- capture_tagged: user saves something WITH a hashtag like #portfolio, #toread, #ideas, #microfaust, etc.\n"
+    "- capture_thought: user is saving a note, idea, reference, or inbox item (no hashtag, no YouTube URL, not a clear action).\n"
+    "  Set data.content = the EXACT text the user wrote, unchanged.\n"
+    "- capture_tagged: user saves something WITH a hashtag like #portfolio, #toread, #leela, #talan, etc.\n"
     "  TRIGGERS — message contains '#' followed by a word.\n"
-    "  Set data.tags = list of tag words found (lowercase, without #). e.g. ['portfolio']\n"
-    "  Set data.content = the clean content only, stripped of 'add to #tag', 'store in #tag', 'ajoute à #tag' prefixes AND the hashtags themselves.\n"
+    "  Set data.tags = list of tag words found (lowercase, without #). e.g. ['portfolio','leela']\n"
+    "  Set data.content = the clean content only — strip ONLY the structural prefix ('add to #tag', 'store in #tag', 'ajoute à #tag') and the hashtags themselves. Keep everything else verbatim.\n"
     "  Example: 'Add to #portfolio ifef ai agent' → data.tags=['portfolio'], data.content='ifef ai agent'\n"
-    "  Example: 'Store in #toread and #ideas https://example.com' → data.tags=['toread','ideas'], data.content='https://example.com'\n"
-    "- capture_todo: user wants to add a task or reminder to their todo list.\n"
-    "  TRIGGERS — any of: 'add todo', 'add to todo', 'add to my list', 'ajoute', 'ajouter', 'à faire', 'à ma liste',\n"
-    "  'remind me', 'rappelle-moi', 'don't forget', 'n'oublie pas', or a message that is a clear actionable task.\n"
-    "  Do NOT fire for messages with hashtags — use capture_tagged instead.\n"
-    "  Set data.content = the clean task only, stripped of any 'add todo / add to todo / ajoute' prefix.\n"
-    "  Example: 'Add deposit Patrick check to todo' → data.content = 'Deposit Patrick check'\n"
+    "  Example: 'Store in #toread and #ideas https://example.com great article' → data.tags=['toread','ideas'], data.content='https://example.com great article'\n"
+    "  NEVER save the question part of a message. 'Portfolio should also have #leela?' → this is a QUESTION, not a capture. Use unknown intent.\n"
+    "- capture_todo: user wants to add an action/task.\n"
+    "  TRIGGERS — explicit: 'add todo', 'add to todo', 'add task', 'ajoute', 'à faire', 'remind me', 'rappelle-moi'.\n"
+    "  Also triggers when message is a clear project-linked action: 'Add to #leela todo pay Loli'.\n"
+    "  Do NOT fire for messages that are questions or observations.\n"
+    "  Set data.content = clean task text. Set data.project = project tag if mentioned (e.g. 'leela'), else empty.\n"
+    "  Example: 'Add to #talan todo prepare pspo2 certification' → data.content='prepare pspo2 certification', data.project='talan'\n"
     "- capture_youtube: message contains a youtube.com or youtu.be URL.\n"
     "  Set data.content = the URL. Set data.title = any description the user added (or empty string).\n"
-    "  Example: 'Watch this later https://youtu.be/abc123' → data.content='https://youtu.be/abc123', data.title='Watch this later'\n"
+    "- capture_goal: user is defining a macro goal with a deadline.\n"
+    "  TRIGGERS — 'add goal', 'macro goal', 'objectif', 'by [date] I want', 'for [date]', 'goal for June', or setting a long-term target.\n"
+    "  Set data.description = the goal text. Set data.deadline = ISO date if mentioned. Set data.project_name = project if mentioned. Set data.current_state = current snapshot if mentioned.\n"
+    "  Example: 'Goal for June 2027: 6k savings' → data.description='6k savings', data.deadline='2027-06-01', data.project_name=''\n"
+    "- mark_done: user wants to mark a todo or note as done/completed.\n"
+    "  TRIGGERS — 'done', 'mark done', 'marquer comme fait', 'completed', 'terminé', 'c'est fait', 'paid', 'payé' + reference to an item.\n"
+    "  Set data.hint = the keyword/name of the item to mark done. Set data.project = project tag if mentioned.\n"
+    "  Example: 'Mark done payment to Loli for #leela' → data.hint='payment to Loli', data.project='leela'\n"
     "- add_habit: user wants to track a recurring habit\n"
-    "- complete_habit: user says they finished a habit (done meditating, finished run, etc.)\n"
     "- show_agenda: user wants to see calendar or meetings — set data.timeframe to 'today', 'tomorrow', or 'week'\n"
-    "- show_thoughts: user wants to see their saved notes or ideas (plain notes, no tag filter)\n"
-    "- show_by_tag: user asks to see items with a specific hashtag or category.\n"
-    "  TRIGGERS — 'show #tag', 'my #tag', 'list #tag', 'what's in #tag', 'mes #tag', 'montre #tag', or asking about a named category.\n"
-    "  Set data.tag = the tag word (lowercase, without #). Example: 'show #portfolio' → data.tag='portfolio'\n"
+    "- show_thoughts: user wants to see their saved notes (plain notes, no tag filter)\n"
+    "- show_by_tag: user asks to see items with a specific hashtag or project.\n"
+    "  TRIGGERS — 'show #tag', 'my #tag', 'what's in #tag', 'is [name] in portfolio', 'tasks under #tag', 'quoi sous #tag'.\n"
+    "  Set data.tag = the tag word (lowercase, without #).\n"
     "- show_youtube: user asks to see their saved YouTube videos / watch list.\n"
-    "  TRIGGERS — 'my videos', 'videos to watch', 'watch list', 'mes vidéos', 'liste de vidéos'\n"
     "- show_todos: user asks to see their task or todo list.\n"
     "  TRIGGERS — 'my todos', 'my tasks', 'task list', 'mes tâches', 'ma liste'\n"
-    "- capture_project: user wants to create or update a project in their portfolio.\n"
-    "  TRIGGERS — 'add project', 'new project', 'create project', 'add to portfolio', 'nouveau projet'.\n"
-    "  Set data.name = project name. Set data.outcome = desired outcome if mentioned (else empty).\n"
-    "  Set data.horizon = timeframe if mentioned (e.g. 'September', '6 months', else empty).\n"
-    "  Example: 'Add project SAMSE, outcome: deliver report, deadline September' → data.name='SAMSE', data.outcome='Deliver report', data.horizon='September'\n"
     "- show_projects: user asks to see their active projects or portfolio.\n"
-    "  TRIGGERS — 'my projects', 'show portfolio', 'active projects', 'mes projets', 'mon portfolio'\n"
+    "  TRIGGERS — 'my projects', 'show portfolio', 'mon portfolio', 'mes projets'\n"
+    "- show_goals: user asks to see their macro goals.\n"
+    "  TRIGGERS — 'my goals', 'macro goals', 'mes objectifs', 'objectifs macro', 'long term goals'\n"
+    "- capture_project: user wants to create a project.\n"
+    "  TRIGGERS — 'add project', 'new project', 'nouveau projet'.\n"
+    "  Set data.name, data.outcome, data.horizon.\n"
     "- set_weekly_outcomes: user is defining their 3 outcomes for the week.\n"
-    "  TRIGGERS — numbered list with 3 items, or 'this week I want to', 'weekly outcomes', 'objectifs de la semaine', or replying to a Sunday PM planning prompt.\n"
-    "  Set data.outcomes = list of {rank, description, project_name} objects.\n"
-    "  Extract project name if user wrote '— ProjectName' or 'for ProjectName' after the outcome.\n"
-    "  Example: '1. Submit grant — Organisyl\\n2. Finish chapters — MaisonLeela\\n3. SAMSE report' → data.outcomes=[{rank:1,description:'Submit grant',project_name:'Organisyl'},{rank:2,description:'Finish chapters',project_name:'MaisonLeela'},{rank:3,description:'SAMSE report',project_name:''}]\n"
+    "  TRIGGERS — numbered list with items, or 'this week', 'weekly outcomes', 'objectifs de la semaine'.\n"
+    "  Set data.outcomes = list of {rank, description, project_name}.\n"
     "- update_outcome_status: user reports progress on a weekly outcome.\n"
-    "  TRIGGERS — 'done', 'finished', 'completed', 'terminé', 'fait', 'c'est fait', '70%', 'in progress', 'en cours', or referencing an outcome by name with a status.\n"
-    "  Set data.description_hint = the outcome name/keyword mentioned. Set data.status = 'done' | 'in_progress' | 'carried_forward'.\n"
+    "  Set data.description_hint = keyword. Set data.status = 'done' | 'in_progress' | 'carried_forward'.\n"
     "- what_now: user asks what to focus on right now.\n"
-    "  TRIGGERS — 'what now', 'what should I do', 'quoi faire', 'que faire maintenant', 'what next'\n"
-    "- create_event: user wants to add a calendar event or meeting\n"
-    "- invoke_council: user wants advice on a decision or multiple perspectives — keywords 'conseil' or 'comité' strongly indicate this\n"
+    "  TRIGGERS — 'what now', 'what should I do', 'quoi faire', 'que faire'\n"
+    "- create_event: user wants to add a calendar event — include title, start, end ISO 8601 in data\n"
+    "- invoke_council: user wants expert advice on a decision — 'conseil', 'comité', 'committee', 'advisory'\n"
     "- language_switch_en: user wants to switch to English\n"
     "- language_switch_fr: user wants to switch to French\n"
-    "- evening_checkin: user is responding to the evening review — message contains gratitude, realisation, or reflection on the day\n"
+    "- evening_checkin: user is responding to the evening reflection — gratitude, learning, realisation\n"
     "- greeting: simple greeting with no actionable content\n"
-    "- unknown: none of the above fits\n\n"
-    "Rules:\n"
-    "- capture_tagged takes priority over capture_todo and capture_thought whenever '#' is present\n"
+    "- unknown: question, unclear intent, or conversation that doesn't fit above\n\n"
+    "CAPTURE CONFIRMATION RULES (critical):\n"
+    "- ALWAYS echo the exact saved content in the reply — never paraphrase or summarise\n"
+    "- Format: 'Saved: [exact content]' or 'Todo: [exact task]' or '#tag: [exact content]'\n"
+    "- Keep replies to 1 line — user is on their phone\n"
+    "- Do NOT interpret, expand, or reword what the user said at capture time\n\n"
+    "LANGUAGE RULES (critical):\n"
+    "- Detect the language of the user's message and ALWAYS respond in THAT language\n"
+    "- French message → French reply. English message → English reply. NO EXCEPTIONS.\n"
+    "- Do not switch languages mid-reply or based on conversation history\n"
+    "- Only fall back to LANG_LABEL when the message is a single emoji or truly ambiguous\n\n"
+    "OTHER RULES:\n"
+    "- capture_tagged takes priority over capture_todo whenever '#' is present and content is being saved\n"
     "- capture_youtube takes priority whenever a YouTube URL is present\n"
-    "- For create_event: include title, start, end in ISO 8601 format in 'data' if mentioned\n"
-    "- For show_agenda: always set data.timeframe — default 'today', use 'tomorrow' or 'week' if user says so\n"
-    "- For capture_thought: confirm you saved it, briefly echo what you understood\n"
-    "- For capture_tagged: confirm saved with the tag(s); echo clean content only\n"
-    "- For capture_todo: confirm the clean task was added; echo only the task name, not the full sentence\n"
-    "- For capture_youtube: confirm the video was saved to watch list\n"
-    "- For invoke_council: classify IMMEDIATELY — never classify council context as capture_thought\n"
-    "- For evening_checkin: reply should be empty string '' — the bot generates its own closing\n"
-    "- For greetings: respond warmly and briefly\n"
-    "- For unknown: acknowledge naturally, ask if there's something specific they need\n"
-    "- Never mention 'intent' or 'classification' in your reply\n"
-    "- Keep replies short — user is on their phone\n"
-    "- CRITICAL: Detect the language of the user's message and respond in THAT language.\n"
-    "  If the user writes in French → reply in French. If in English → reply in English.\n"
-    "  Only use LANG_LABEL as fallback when the message is ambiguous (single word, emoji, or unclear).\n"
-    "- NEVER mix languages within a single reply."
+    "- Questions about the system ('is X in portfolio?', 'what categories exist?') → unknown, answer conversationally\n"
+    "- For invoke_council: prepend 'Switching to advisory mode.' before the council response\n"
+    "- For evening_checkin: reply = '' — bot generates its own closing\n"
+    "- Never mention 'intent' or 'classification' in replies"
 )
 
 
@@ -193,6 +195,12 @@ async def handle_telegram_message(pool: asyncpg.Pool, job: asyncpg.Record):
         await _update_outcome_status(pool, tenant_id, data, token, chat_id, reply, lang)
     elif intent == "what_now":
         await _what_now(pool, tenant_id, token, chat_id, lang)
+    elif intent == "capture_goal":
+        await _capture_goal(pool, tenant_id, data, token, chat_id, reply, lang)
+    elif intent == "show_goals":
+        await _show_goals(pool, tenant_id, token, chat_id, lang)
+    elif intent == "mark_done":
+        await _mark_done(pool, tenant_id, data, token, chat_id, reply, lang)
     elif intent == "create_event":
         await _handle_calendar_create(tenant_id, pool, data, token, chat_id, lang)
     elif intent == "evening_checkin":
@@ -408,7 +416,9 @@ async def _invoke_council(text: str, token: str, chat_id: str, lang: str,
                 },
             )
         if r.status_code == 200:
-            await _send(token, chat_id, r.json()["content"][0]["text"].strip())
+            council_text = r.json()["content"][0]["text"].strip()
+            signal = "🔮 Mode conseil." if lang == "fr" else "🔮 Advisory mode."
+            await _send(token, chat_id, signal + "\n\n" + council_text)
             return
     except Exception as e:
         logger.error("Council invocation failed: %s", e)
@@ -778,16 +788,17 @@ async def _what_now(pool, tenant_id, token: str, chat_id: str, lang: str):
     next_event = None
     minutes_free = None
     if events:
+        import pytz as _pytz
+        _PARIS = _pytz.timezone("Europe/Paris")
         for ev in events:
             ev_start = ev.get("start", {}).get("dateTime")
             if ev_start:
                 try:
-                    from dateutil import parser as dtparser
-                    ev_dt = dtparser.parse(ev_start)
+                    # Parse ISO 8601 with stdlib — no dateutil needed
+                    ev_start_clean = ev_start.replace("Z", "+00:00")
+                    ev_dt = datetime.fromisoformat(ev_start_clean)
                     if ev_dt.tzinfo is None:
-                        from datetime import timezone as tz
-                        import pytz
-                        ev_dt = pytz.timezone("Europe/Paris").localize(ev_dt)
+                        ev_dt = _PARIS.localize(ev_dt)
                     diff = (ev_dt - now_utc).total_seconds() / 60
                     if diff > 0 and (minutes_free is None or diff < minutes_free):
                         minutes_free = int(diff)
@@ -838,6 +849,92 @@ async def _what_now(pool, tenant_id, token: str, chat_id: str, lang: str):
                 lines.append(f"  • {o['description']}")
 
     await _send(token, chat_id, "\n".join(lines))
+    await _mark_responded(pool, tenant_id)
+
+
+async def _capture_goal(pool, tenant_id, data: dict, token: str, chat_id: str, reply: str, lang: str):
+    description = (data.get("description") or "").strip()
+    if not description:
+        await _send(token, chat_id, _t(lang,
+            "De quel objectif s'agit-il ?", "What is the goal?"))
+        return
+    deadline = data.get("deadline") or None
+    project_name = (data.get("project_name") or "").strip() or None
+    current_state = (data.get("current_state") or "").strip() or None
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            await conn.execute(
+                """INSERT INTO macro_goals (tenant_id, description, project_name, deadline, current_state)
+                   VALUES ($1,$2,$3,$4,$5)""",
+                tenant_id, description, project_name, deadline, current_state,
+            )
+    except Exception as e:
+        logger.error("capture_goal failed: %s", e)
+    await _send(token, chat_id, reply)
+    await _mark_responded(pool, tenant_id)
+
+
+async def _show_goals(pool, tenant_id, token: str, chat_id: str, lang: str):
+    from datetime import date
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            rows = await conn.fetch(
+                "SELECT description, project_name, deadline, current_state, status "
+                "FROM macro_goals WHERE tenant_id=$1 AND status='active' ORDER BY deadline NULLS LAST",
+                tenant_id,
+            )
+    except Exception as e:
+        logger.error("show_goals failed: %s", e)
+        rows = []
+    if not rows:
+        await _send(token, chat_id, _t(lang,
+            "Aucun objectif macro. Dis 'objectif [description] pour [date]' pour en définir un.",
+            "No macro goals. Say 'goal [description] by [date]' to set one."))
+        return
+    today = date.today()
+    lines = []
+    for g in rows:
+        line = f"• {g['description']}"
+        if g["project_name"]:
+            line += f" [{g['project_name']}]"
+        if g["deadline"]:
+            months_left = (g["deadline"].year - today.year) * 12 + (g["deadline"].month - today.month)
+            line += f" — {months_left}m" if lang == "en" else f" — {months_left} mois"
+        if g["current_state"]:
+            line += f"\n  Maintenant : {g['current_state']}" if lang == "fr" else f"\n  Now: {g['current_state']}"
+        lines.append(line)
+    header = _t(lang, "Objectifs macro :", "Macro goals:")
+    await _send(token, chat_id, header + "\n\n" + "\n\n".join(lines))
+    await _mark_responded(pool, tenant_id)
+
+
+async def _mark_done(pool, tenant_id, data: dict, token: str, chat_id: str, reply: str, lang: str):
+    hint = (data.get("hint") or "").strip()
+    project = (data.get("project") or "").strip()
+    if not hint:
+        await _send(token, chat_id, _t(lang,
+            "Quelle tâche marquer comme faite ?", "Which task to mark as done?"))
+        return
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT set_config('app.tenant_id',$1,true)", str(tenant_id))
+            if project:
+                result = await conn.execute(
+                    """UPDATE thoughts SET done=true
+                       WHERE tenant_id=$1 AND done=false
+                         AND content ILIKE $2 AND (project_name ILIKE $3 OR $3=ANY(coalesce(tags,'{}')))""",
+                    tenant_id, f"%{hint}%", project,
+                )
+            else:
+                result = await conn.execute(
+                    "UPDATE thoughts SET done=true WHERE tenant_id=$1 AND done=false AND content ILIKE $2",
+                    tenant_id, f"%{hint}%",
+                )
+    except Exception as e:
+        logger.error("mark_done failed: %s", e)
+    await _send(token, chat_id, reply)
     await _mark_responded(pool, tenant_id)
 
 

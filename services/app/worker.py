@@ -17,10 +17,12 @@ PARIS = pytz.timezone("Europe/Paris")
 
 # (job_type, hour, minute, weekday)  weekday: 0-6 Mon-Sun, None=daily
 _CRON_SCHEDULE = [
-    ("cron_morning",       7,  5, None),   # daily 07:05 Paris
-    ("cron_evening",      20, 30, None),   # daily 20:30 Paris
-    ("cron_weekly_review", 9,  0,    6),   # Sunday 09:00 Paris
-    ("cron_sunday_pm",    17,  0,    6),   # Sunday 17:00 Paris
+    ("cron_morning",       7,  5, None, None),   # daily 07:05 Paris
+    ("cron_evening",      20, 30, None, None),   # daily 20:30 Paris
+    ("cron_weekly_review", 9,  0,    6, None),   # Sunday 09:00 Paris
+    ("cron_sunday_pm",    17,  0,    6, None),   # Sunday 17:00 Paris
+    ("cron_thursday",      9,  0,    3, None),   # Thursday 09:00 Paris
+    ("cron_monthly",       9,  0, None,    1),   # 1st of month 09:00 Paris
 ]
 
 from handlers.telegram_message import handle_telegram_message
@@ -29,6 +31,8 @@ from handlers.cron_morning import handle_cron_morning
 from handlers.cron_evening import handle_cron_evening
 from handlers.cron_weekly import handle_cron_weekly_review
 from handlers.cron_sunday_pm import handle_cron_sunday_pm
+from handlers.cron_thursday import handle_cron_thursday
+from handlers.cron_monthly import handle_cron_monthly
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +43,8 @@ HANDLERS = {
     "cron_evening":       handle_cron_evening,
     "cron_weekly_review": handle_cron_weekly_review,
     "cron_sunday_pm":     handle_cron_sunday_pm,
+    "cron_thursday":      handle_cron_thursday,
+    "cron_monthly":       handle_cron_monthly,
 }
 
 
@@ -131,10 +137,12 @@ async def cron_scheduler(pool: asyncpg.Pool) -> None:
         now = datetime.now(PARIS)
         minute_key = now.strftime("%Y-%m-%d %H:%M")
 
-        for job_type, hour, minute, weekday in _CRON_SCHEDULE:
+        for job_type, hour, minute, weekday, monthday in _CRON_SCHEDULE:
             if now.hour != hour or now.minute != minute:
                 continue
             if weekday is not None and now.weekday() != weekday:
+                continue
+            if monthday is not None and now.day != monthday:
                 continue
             fire_key = f"{job_type}:{minute_key}"
             if fire_key in _fired:
